@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:socialee_sphere/login.dart';
 import 'analytics_dashboard.dart';
+import 'client_dashbaord.dart';
 import 'dashboard_shared.dart';
 
 class Dashboard extends StatefulWidget {
@@ -18,21 +19,12 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
   String _activeSubSection = '';
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
-  /// Currently selected client — when non-null, menu sections show
-  /// only that client's data.
   ClientModel? _selectedClient;
-
-  /// Date range for analytics.
-  DateRangeSelection _analyticsRange = DateRangeSelection(
-    startDate: DateTime.now().subtract(const Duration(days: 30)),
-    endDate: DateTime.now(),
-    label: 'Last 30 Days',
-  );
+  ClientModel? _socialHandlesClient;
 
   final Map<String, bool> _expandedMenus = {
     'clients': false,
     'social': false,
-    'content': false,
   };
 
   final List<ClientModel> _clients = [];
@@ -46,6 +38,7 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
   late Animation<double> _bgAnimation;
   late Animation<double> _glowAnimation;
 
+  // ── SIMPLIFIED SIDEBAR: Dashboard, Clients, Social Accounts
   late final List<MenuItemModel> _menuItems = [
     const MenuItemModel(
       icon: Icons.dashboard_rounded,
@@ -63,52 +56,16 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
         SubItemModel(icon: Icons.person_add_alt_1_rounded, label: 'Add Client'),
       ],
     ),
-    MenuItemModel(
+    const MenuItemModel(
       icon: Icons.share_rounded,
       label: 'Social Accounts',
       color: AppColors.blue,
       isExpandable: true,
       key: 'social',
-      children: kSocialPlatforms
-          .map((p) => SubItemModel(icon: p.icon, label: p.name))
-          .toList(),
-    ),
-    const MenuItemModel(
-      icon: Icons.article_rounded,
-      label: 'Content',
-      color: AppColors.green,
-      isExpandable: true,
-      key: 'content',
       children: [
-        SubItemModel(icon: Icons.edit_note_rounded, label: 'Create Content'),
-        SubItemModel(icon: Icons.drafts_rounded, label: 'Drafts'),
-        SubItemModel(icon: Icons.perm_media_rounded, label: 'Media Archive'),
+        SubItemModel(icon: Icons.add_link_rounded, label: 'Add Handles'),
+        SubItemModel(icon: Icons.apps_rounded, label: 'All Platforms'),
       ],
-    ),
-    const MenuItemModel(
-      icon: Icons.calendar_month_rounded,
-      label: 'Calendar',
-      color: AppColors.amber,
-    ),
-    const MenuItemModel(
-      icon: Icons.queue_rounded,
-      label: 'Publishing Queue',
-      color: AppColors.orange,
-    ),
-    const MenuItemModel(
-      icon: Icons.check_circle_rounded,
-      label: 'Published',
-      color: AppColors.green,
-    ),
-    const MenuItemModel(
-      icon: Icons.error_rounded,
-      label: 'Failed',
-      color: AppColors.red,
-    ),
-    const MenuItemModel(
-      icon: Icons.analytics_rounded,
-      label: 'Analytics',
-      color: AppColors.pink,
     ),
   ];
 
@@ -896,9 +853,7 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
   Widget _buildTopBar(bool isMobile, bool isTablet) {
     final baseTitle = _menuItems[_selectedIndex].label;
     final sub = _activeSubSection.isEmpty ? '' : ' • $_activeSubSection';
-    final clientTag =
-    _selectedClient == null ? '' : ' • ${_selectedClient!.companyName}';
-    final title = '$baseTitle$sub$clientTag';
+    final title = '$baseTitle$sub';
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
@@ -943,43 +898,6 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
                 constraints: const BoxConstraints(),
               ),
             const SizedBox(width: 12),
-            if (_selectedClient != null)
-              Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: InkWell(
-                  onTap: () => setState(() => _selectedClient = null),
-                  borderRadius: BorderRadius.circular(50),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(50),
-                      color: AppColors.purple.withOpacity(0.12),
-                      border: Border.all(
-                          color: AppColors.purple.withOpacity(0.4)),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.business_rounded,
-                            size: 12, color: _selectedClient!.logoColor),
-                        const SizedBox(width: 5),
-                        Text(
-                          _selectedClient!.companyName,
-                          style: GoogleFonts.outfit(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.textDark,
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        const Icon(Icons.close_rounded,
-                            size: 12, color: AppColors.textDarkMuted),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
             Expanded(
               child: Text(
                 title,
@@ -1050,7 +968,6 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
               ],
             ),
             const SizedBox(width: 8),
-            // ── Logout button (responsive)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
               decoration: BoxDecoration(
@@ -1067,7 +984,6 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // ── Avatar
                   Container(
                     width: 22,
                     height: 22,
@@ -1078,8 +994,6 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
                     child: const Icon(Icons.person_rounded,
                         size: 14, color: Colors.white),
                   ),
-
-                  // ── "Admin" text (hidden on mobile/tablet)
                   if (!isMobile && !isTablet) ...[
                     const SizedBox(width: 8),
                     Text(
@@ -1091,16 +1005,12 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
                       ),
                     ),
                   ],
-
-                  // ── Divider between identity and action
                   const SizedBox(width: 8),
                   Container(
                     width: 1,
                     height: 18,
                     color: Colors.white.withOpacity(0.25),
                   ),
-
-                  // ── Logout icon-button
                   _buildLogoutButton(isMobile: isMobile, isTablet: isTablet),
                 ],
               ),
@@ -1111,8 +1021,6 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
     );
   }
 
-  /// Beautiful responsive logout button — icon only on mobile/tablet,
-  /// icon + label on desktop. Shows a confirmation dialog before logging out.
   Widget _buildLogoutButton({
     required bool isMobile,
     required bool isTablet,
@@ -1181,7 +1089,6 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
     );
   }
 
-  /// Confirmation dialog + logout action.
   Future<void> _confirmLogout() async {
     final shouldLogout = await showDialog<bool>(
       context: context,
@@ -1209,7 +1116,6 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Icon badge
               Container(
                 width: 58,
                 height: 58,
@@ -1255,7 +1161,6 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
               const SizedBox(height: 20),
               Row(
                 children: [
-                  // Cancel
                   Expanded(
                     child: OutlinedButton(
                       onPressed: () => Navigator.of(ctx).pop(false),
@@ -1277,7 +1182,6 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
                     ),
                   ),
                   const SizedBox(width: 10),
-                  // Logout
                   Expanded(
                     child: Container(
                       decoration: BoxDecoration(
@@ -1299,7 +1203,10 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
                         ],
                       ),
                       child: ElevatedButton(
-                        onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (ctx) => LogIN())),
+                        onPressed: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (ctx) => const LogIN())),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.transparent,
                           shadowColor: Colors.transparent,
@@ -1329,7 +1236,6 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
     );
 
     if (shouldLogout == true && mounted) {
-      // Simulated logout → navigate to login screen.
       Navigator.pushNamedAndRemoveUntil(
         context,
         '/login',
@@ -1338,6 +1244,9 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
     }
   }
 
+  // ═══════════════════════════════════════════════════════════════════════
+  // MAIN CONTENT ROUTER — now simplified (only 3 top-level sections)
+  // ═══════════════════════════════════════════════════════════════════════
   Widget _buildMainContent() {
     switch (_selectedIndex) {
       case 0:
@@ -1346,180 +1255,16 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
         if (_activeSubSection == 'Add Client') return _buildAddClientForm();
         return _buildClientsList();
       case 2:
-        if (_activeSubSection.isNotEmpty) {
-          return _buildPlatformAccounts(_activeSubSection);
+        if (_activeSubSection == 'Add Handles') {
+          return _buildAddSocialHandlesForm();
         }
-        return _buildSocialAccounts();
-      case 3:
-        if (_activeSubSection == 'Create Content') {
-          return _buildCreateContentForm();
+        if (_activeSubSection == 'All Platforms') {
+          return _buildAllPlatformsScreen();
         }
-        if (_activeSubSection == 'Drafts') return _buildDrafts();
-        if (_activeSubSection == 'Media Archive') return _buildMediaArchive();
-        return _buildCreateContentForm();
-      case 4:
-        return _buildCalendarSection();
-      case 5:
-        return PublishingSections.buildPublishingQueue(
-          _scheduledPosts,
-          filterClientName: _selectedClient?.companyName,
-        );
-      case 6:
-        return PublishingSections.buildPublishedSection(
-          _publishedPosts,
-          filterClientName: _selectedClient?.companyName,
-        );
-      case 7:
-        return PublishingSections.buildFailedSection(
-          _failedPosts,
-          filterClientName: _selectedClient?.companyName,
-        );
-      case 8:
-        return PublishingSections.buildAnalyticsSection(
-          _publishedPosts,
-          filterClientName: _selectedClient?.companyName,
-          dateRange: _analyticsRange,
-          onDateRangeTap: _showAnalyticsDateRangePicker,
-        );
+        return _buildSocialAccountsOverview();
       default:
         return _buildOverviewSection();
     }
-  }
-
-  Future<void> _showAnalyticsDateRangePicker() async {
-    final now = DateTime.now();
-    final result = await showModalBottomSheet<DateRangeSelection>(
-      context: context,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Center(
-                  child: Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: AppColors.borderLight,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                Text(
-                  'Select Reporting Period',
-                  style: GoogleFonts.bricolageGrotesque(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.textDark,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                _presetRange(ctx, 'Last 7 Days', 7, now),
-                _presetRange(ctx, 'Last 30 Days', 30, now),
-                _presetRange(ctx, 'Last 90 Days', 90, now),
-                _presetRange(ctx, 'Year to Date',
-                    now.difference(DateTime(now.year, 1, 1)).inDays, now),
-                const Divider(height: 20),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: Container(
-                    width: 38,
-                    height: 38,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(10),
-                      color: AppColors.purple.withOpacity(0.12),
-                    ),
-                    child: const Icon(Icons.date_range_rounded,
-                        color: AppColors.purple, size: 20),
-                  ),
-                  title: Text('Custom Range',
-                      style: GoogleFonts.outfit(
-                        fontSize: 13.5,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textDark,
-                      )),
-                  subtitle: Text('Pick start & end dates',
-                      style: GoogleFonts.outfit(
-                          fontSize: 11, color: AppColors.textDarkMuted)),
-                  onTap: () async {
-                    final picked = await showDateRangePicker(
-                      context: ctx,
-                      firstDate: DateTime(2020),
-                      lastDate: DateTime(2100),
-                      initialDateRange: DateTimeRange(
-                        start: _analyticsRange.startDate,
-                        end: _analyticsRange.endDate,
-                      ),
-                      builder: (context, child) => Theme(
-                        data: ThemeData.light().copyWith(
-                          colorScheme: const ColorScheme.light(
-                            primary: AppColors.purple,
-                            onPrimary: Colors.white,
-                            surface: Colors.white,
-                            onSurface: AppColors.textDark,
-                          ),
-                        ),
-                        child: child!,
-                      ),
-                    );
-                    if (picked != null && ctx.mounted) {
-                      Navigator.of(ctx).pop(DateRangeSelection(
-                        startDate: picked.start,
-                        endDate: picked.end,
-                        label:
-                        '${formatDateLong(picked.start)} → ${formatDateLong(picked.end)}',
-                      ));
-                    }
-                  },
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-
-    if (result != null && mounted) {
-      setState(() => _analyticsRange = result);
-    }
-  }
-
-  Widget _presetRange(
-      BuildContext ctx, String label, int days, DateTime now) {
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      leading: Container(
-        width: 38,
-        height: 38,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(10),
-          color: AppColors.cyan.withOpacity(0.12),
-        ),
-        child: const Icon(Icons.schedule_rounded,
-            color: AppColors.cyan, size: 20),
-      ),
-      title: Text(label,
-          style: GoogleFonts.outfit(
-            fontSize: 13.5,
-            fontWeight: FontWeight.w700,
-            color: AppColors.textDark,
-          )),
-      onTap: () {
-        Navigator.of(ctx).pop(DateRangeSelection(
-          startDate: now.subtract(Duration(days: days)),
-          endDate: now,
-          label: label,
-        ));
-      },
-    );
   }
 
   Widget _scrollWrapper({required List<Widget> children}) {
@@ -1533,6 +1278,7 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
     );
   }
 
+  // ── OVERVIEW (Dashboard) ──────────────────────────────────────────────
   Widget _buildOverviewSection() {
     return _scrollWrapper(children: [
       _buildWelcomeBanner(),
@@ -1556,12 +1302,12 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
                       });
                     }),
                 const SizedBox(height: 12),
-                _actionTile('Create Content', Icons.edit_note_rounded,
-                    AppColors.cyan, () {
+                _actionTile('Open Client Dashboard',
+                    Icons.dashboard_customize_rounded, AppColors.cyan, () {
                       setState(() {
-                        _selectedIndex = 3;
-                        _activeSubSection = 'Create Content';
-                        _expandedMenus['content'] = true;
+                        _selectedIndex = 1;
+                        _activeSubSection = 'Client List';
+                        _expandedMenus['clients'] = true;
                       });
                     }),
               ],
@@ -1581,14 +1327,16 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: _actionTile('Create Content', Icons.edit_note_rounded,
+                child: _actionTile(
+                    'Open Client Dashboard',
+                    Icons.dashboard_customize_rounded,
                     AppColors.cyan, () {
-                      setState(() {
-                        _selectedIndex = 3;
-                        _activeSubSection = 'Create Content';
-                        _expandedMenus['content'] = true;
-                      });
-                    }),
+                  setState(() {
+                    _selectedIndex = 1;
+                    _activeSubSection = 'Client List';
+                    _expandedMenus['clients'] = true;
+                  });
+                }),
               ),
             ],
           );
@@ -1710,9 +1458,7 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  _selectedClient == null
-                      ? 'Manage client registrations, content scheduling, and calendar in one place. Tap any client card to focus on their data.'
-                      : 'Viewing data for ${_selectedClient!.companyName}.',
+                  'Open a client dashboard to manage their content, calendar, publishing queue, and analytics.',
                   style: GoogleFonts.outfit(
                     fontSize: 13,
                     color: AppColors.textSecondary,
@@ -1823,6 +1569,7 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
     );
   }
 
+  // ── CLIENTS ──────────────────────────────────────────────────────────
   Widget _buildClientsList() {
     return _scrollWrapper(children: [
       Row(
@@ -1846,7 +1593,7 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
       ),
       const SizedBox(height: 4),
       Text(
-        'Tap a client card to focus every section on that client.',
+        'Tap a client card to open its dedicated dashboard.',
         style: GoogleFonts.outfit(
             fontSize: 11.5, color: AppColors.textDarkMuted),
       ),
@@ -1863,23 +1610,13 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
   }
 
   Widget _buildClientCard(ClientModel client) {
-    final isSelected = _selectedClient?.companyName == client.companyName;
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: () {
-            setState(() {
-              _selectedClient = isSelected ? null : client;
-            });
-            _showSnack(
-              isSelected
-                  ? 'Cleared client filter'
-                  : 'Focused on ${client.companyName}',
-              isSelected ? AppColors.amber : client.logoColor,
-            );
-          },
+          // ── TAP → open separate Client Dashboard page
+          onTap: () => _openClientDashboard(client),
           borderRadius: BorderRadius.circular(16),
           child: Container(
             padding: const EdgeInsets.all(16),
@@ -1887,16 +1624,13 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
               color: Colors.white,
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                color: isSelected
-                    ? client.logoColor
-                    : client.logoColor.withOpacity(0.3),
-                width: isSelected ? 2 : 1,
+                color: client.logoColor.withOpacity(0.3),
+                width: 1,
               ),
               boxShadow: [
                 BoxShadow(
-                  color: client.logoColor
-                      .withOpacity(isSelected ? 0.2 : 0.08),
-                  blurRadius: isSelected ? 22 : 16,
+                  color: client.logoColor.withOpacity(0.08),
+                  blurRadius: 16,
                   offset: const Offset(0, 6),
                 ),
               ],
@@ -1922,34 +1656,32 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
                               ),
                             ),
                           ),
-                          if (isSelected)
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 3),
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(50),
-                                color: client.logoColor.withOpacity(0.15),
-                                border: Border.all(
-                                    color:
-                                    client.logoColor.withOpacity(0.5)),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.check_circle_rounded,
-                                      size: 11, color: client.logoColor),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    'Selected',
-                                    style: GoogleFonts.outfit(
-                                      fontSize: 9.5,
-                                      fontWeight: FontWeight.w700,
-                                      color: client.logoColor,
-                                    ),
-                                  ),
-                                ],
-                              ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(50),
+                              color: client.logoColor.withOpacity(0.12),
+                              border: Border.all(
+                                  color: client.logoColor.withOpacity(0.4)),
                             ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  'Open',
+                                  style: GoogleFonts.outfit(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w700,
+                                    color: client.logoColor,
+                                  ),
+                                ),
+                                const SizedBox(width: 2),
+                                Icon(Icons.arrow_forward_rounded,
+                                    size: 11, color: client.logoColor),
+                              ],
+                            ),
+                          ),
                         ],
                       ),
                       const SizedBox(height: 6),
@@ -1989,6 +1721,37 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  void _openClientDashboard(ClientModel client) {
+    // Scope all posts to this client and open the dedicated page.
+    final clientScheduled = _scheduledPosts
+        .where((p) => p.clientName == client.companyName)
+        .toList();
+    final clientPublished = _publishedPosts
+        .where((p) => p.clientName == client.companyName)
+        .toList();
+    final clientFailed = _failedPosts
+        .where((p) => p.clientName == client.companyName)
+        .toList();
+    final clientMedia = _mediaArchive
+        .where((m) => m.clientName == client.companyName)
+        .toList();
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ClientDashboard(
+          client: client,
+          scheduledPosts: clientScheduled,
+          publishedPosts: clientPublished,
+          failedPosts: clientFailed,
+          mediaArchive: clientMedia,
+          onScheduleNew: (post) {
+            setState(() => _scheduledPosts.add(post));
+          },
         ),
       ),
     );
@@ -2104,63 +1867,76 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
       onSave: (client) {
         setState(() {
           _clients.add(client);
-          _activeSubSection = 'Client List';
+          _selectedIndex = 2;
+          _activeSubSection = 'Add Handles';
+          _socialHandlesClient = client;
+          _expandedMenus['social'] = true;
         });
-        _showSnack('Client "${client.companyName}" registered successfully!',
-            AppColors.green);
+        _showSnack(
+          'Client "${client.companyName}" registered! Now add their social handles.',
+          AppColors.green,
+        );
       },
       onCancel: () => setState(() => _activeSubSection = 'Client List'),
     );
   }
 
-  Widget _buildSocialAccounts() {
-    final scopedClients = _selectedClient == null
-        ? _clients
-        : _clients
-        .where((c) => c.companyName == _selectedClient!.companyName)
-        .toList();
-
-    final Map<String, int> platformCounts = {};
-    final Map<String, int> metaConnectedCounts = {};
-    for (final c in scopedClients) {
-      for (final p in c.socialHandles.keys) {
-        platformCounts[p] = (platformCounts[p] ?? 0) + 1;
-        if (c.metaConnected[p] == true) {
-          metaConnectedCounts[p] = (metaConnectedCounts[p] ?? 0) + 1;
-        }
-      }
-    }
-
+  // ── SOCIAL ACCOUNTS ──────────────────────────────────────────────────
+  Widget _buildSocialAccountsOverview() {
     return _scrollWrapper(children: [
       buildSectionTitle('Social Accounts'),
-      if (_selectedClient != null) ...[
-        const SizedBox(height: 4),
-        Text(
-          'Filtered by: ${_selectedClient!.companyName}',
-          style: GoogleFonts.outfit(
-              fontSize: 11.5, color: AppColors.textDarkMuted),
-        ),
-      ],
       const SizedBox(height: 4),
       Text(
-        'All platforms are connected via Meta Business Suite for unified publishing.',
+        'Manage connected handles for every client in one place.',
         style: GoogleFonts.outfit(
             fontSize: 11.5, color: AppColors.textDarkMuted),
       ),
+      const SizedBox(height: 16),
+      _socialOptionCard(
+        title: 'Add Handles',
+        subtitle: 'Pick a client and link their social media accounts.',
+        icon: Icons.add_link_rounded,
+        color: AppColors.purple,
+        onTap: () => setState(() {
+          _activeSubSection = 'Add Handles';
+          _expandedMenus['social'] = true;
+        }),
+      ),
       const SizedBox(height: 12),
-      ...kSocialPlatforms.map((p) {
-        final count = platformCounts[p.name] ?? 0;
-        final metaCount = metaConnectedCounts[p.name] ?? 0;
-        return Container(
-          margin: const EdgeInsets.only(bottom: 12),
+      _socialOptionCard(
+        title: 'All Platforms',
+        subtitle: 'See every connected account across all clients.',
+        icon: Icons.apps_rounded,
+        color: AppColors.blue,
+        onTap: () => setState(() {
+          _activeSubSection = 'All Platforms';
+          _expandedMenus['social'] = true;
+        }),
+      ),
+    ]);
+  }
+
+  Widget _socialOptionCard({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: p.color.withOpacity(0.35)),
+            border: Border.all(color: color.withOpacity(0.35)),
             boxShadow: [
               BoxShadow(
-                color: p.color.withOpacity(0.08),
+                color: color.withOpacity(0.08),
                 blurRadius: 16,
                 offset: const Offset(0, 6),
               ),
@@ -2175,946 +1951,500 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
                   borderRadius: BorderRadius.circular(14),
                   gradient: LinearGradient(
                     colors: [
-                      p.color.withOpacity(0.25),
-                      p.color.withOpacity(0.08),
+                      color.withOpacity(0.25),
+                      color.withOpacity(0.08),
                     ],
                   ),
-                  border: Border.all(color: p.color.withOpacity(0.4)),
+                  border: Border.all(color: color.withOpacity(0.4)),
                 ),
-                child: Icon(p.icon, color: p.color, size: 24),
+                child: Icon(icon, color: color, size: 22),
               ),
               const SizedBox(width: 14),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            p.name,
-                            style: GoogleFonts.outfit(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.textDark,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        if (p.usesMetaIntegration) ...[
-                          const SizedBox(width: 6),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 5, vertical: 1),
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(4),
-                              color: AppColors.blue.withOpacity(0.15),
-                            ),
-                            child: Text(
-                              'META',
-                              style: GoogleFonts.outfit(
-                                fontSize: 8,
-                                fontWeight: FontWeight.w800,
-                                color: AppColors.blue,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ],
+                    Text(
+                      title,
+                      style: GoogleFonts.outfit(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textDark,
+                      ),
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      count == 0
-                          ? 'No accounts connected'
-                          : '$count connected • $metaCount via Meta',
+                      subtitle,
                       style: GoogleFonts.outfit(
                           fontSize: 12, color: AppColors.textDarkMuted),
                     ),
                   ],
                 ),
               ),
-              TextButton(
-                onPressed: () {
-                  setState(() {
-                    _selectedIndex = 2;
-                    _activeSubSection = p.name;
-                  });
-                },
-                child: Text(
-                  'View',
-                  style: GoogleFonts.outfit(
-                    color: p.color,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
+              Icon(Icons.arrow_forward_rounded, size: 16, color: color),
             ],
           ),
-        );
-      }),
-    ]);
+        ),
+      ),
+    );
   }
 
-  Widget _buildPlatformAccounts(String platformName) {
-    final platform = kSocialPlatforms.firstWhere(
-          (p) => p.name == platformName,
-      orElse: () => kSocialPlatforms.first,
-    );
-
-    final sourceClients = _selectedClient == null
-        ? _clients
-        : _clients
-        .where((c) => c.companyName == _selectedClient!.companyName)
-        .toList();
-
-    final entries = <MapEntry<ClientModel, String>>[];
-    for (final c in sourceClients) {
-      if (c.socialHandles.containsKey(platformName)) {
-        entries.add(MapEntry(c, c.socialHandles[platformName]!));
-      }
+  // ── ADD HANDLES ──────────────────────────────────────────────────────
+  Widget _buildAddSocialHandlesForm() {
+    if (_socialHandlesClient == null && _clients.isEmpty) {
+      return _scrollWrapper(children: [
+        buildSectionTitle('Add Social Handles'),
+        const SizedBox(height: 8),
+        buildEmptyState(
+          icon: Icons.person_add_alt_1_rounded,
+          title: 'No clients registered',
+          subtitle: 'Register a client first from Clients → Add Client.',
+        ),
+      ]);
     }
 
-    return _scrollWrapper(children: [
-      Row(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              gradient: LinearGradient(
-                colors: [
-                  platform.color.withOpacity(0.25),
-                  platform.color.withOpacity(0.08),
-                ],
-              ),
-              border: Border.all(color: platform.color.withOpacity(0.4)),
-            ),
-            child: Icon(platform.icon, color: platform.color, size: 22),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              platform.name,
-              style: GoogleFonts.bricolageGrotesque(
-                fontSize: 20,
-                fontWeight: FontWeight.w800,
-                color: AppColors.textDark,
-              ),
-            ),
-          ),
-          Text(
-            '${entries.length} account${entries.length == 1 ? '' : 's'}',
-            style: GoogleFonts.outfit(
-                fontSize: 13, color: AppColors.textDarkMuted),
-          ),
-        ],
-      ),
-      const SizedBox(height: 8),
-      Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(10),
-          color: platform.usesMetaIntegration
-              ? AppColors.blue.withOpacity(0.08)
-              : AppColors.amber.withOpacity(0.08),
-          border: Border.all(
-            color: platform.usesMetaIntegration
-                ? AppColors.blue.withOpacity(0.3)
-                : AppColors.amber.withOpacity(0.3),
-          ),
+    if (_socialHandlesClient == null) {
+      return _scrollWrapper(children: [
+        buildSectionTitle('Select a Client'),
+        const SizedBox(height: 4),
+        Text(
+          'Pick the client whose social handles you want to add or edit.',
+          style: GoogleFonts.outfit(
+              fontSize: 11.5, color: AppColors.textDarkMuted),
         ),
-        child: Row(
-          children: [
-            Icon(
-              platform.usesMetaIntegration
-                  ? Icons.verified_rounded
-                  : Icons.info_outline_rounded,
-              size: 14,
-              color: platform.usesMetaIntegration
-                  ? AppColors.blue
-                  : AppColors.amber,
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                platform.usesMetaIntegration
-                    ? 'Connected via Meta Business Suite — unified login & publishing.'
-                    : 'Connected via native ${platform.name} API.',
-                style: GoogleFonts.outfit(
-                  fontSize: 11.5,
-                  color: platform.usesMetaIntegration
-                      ? AppColors.blue
-                      : AppColors.amber,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-      const SizedBox(height: 16),
-      if (entries.isEmpty)
-        buildEmptyState(
-          icon: platform.icon,
-          title: 'No ${platform.name} accounts',
-          subtitle:
-          'Register a client with a ${platform.name} handle to see it here.',
-        )
-      else
-        ...entries.map((e) {
-          final client = e.key;
-          final handle = e.value;
-          final isMetaConnected = client.metaConnected[platformName] ?? false;
-          return Container(
-            margin: const EdgeInsets.only(bottom: 12),
-            padding: const EdgeInsets.all(16),
+        const SizedBox(height: 12),
+        ..._clients.map((c) => _socialHandlesClientPickerTile(c)),
+      ]);
+    }
+
+    return SocialHandlesForm(
+      client: _socialHandlesClient!,
+      onSave: (updated) {
+        setState(() {
+          final idx = _clients
+              .indexWhere((c) => c.companyName == updated.companyName);
+          if (idx != -1) _clients[idx] = updated;
+          _socialHandlesClient = null;
+          _activeSubSection = '';
+        });
+        _showSnack(
+            'Social handles saved for "${updated.companyName}"!',
+            AppColors.green);
+      },
+      onCancel: () => setState(() {
+        _socialHandlesClient = null;
+        _activeSubSection = '';
+      }),
+    );
+  }
+
+  Widget _socialHandlesClientPickerTile(ClientModel c) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => setState(() => _socialHandlesClient = c),
+          borderRadius: BorderRadius.circular(14),
+          child: Container(
+            padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: platform.color.withOpacity(0.3)),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: c.logoColor.withOpacity(0.35)),
               boxShadow: [
                 BoxShadow(
-                  color: platform.color.withOpacity(0.06),
-                  blurRadius: 16,
-                  offset: const Offset(0, 6),
+                  color: c.logoColor.withOpacity(0.06),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
                 ),
               ],
             ),
             child: Row(
               children: [
-                _buildClientLogo(client, size: 44),
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(11),
+                    gradient: LinearGradient(
+                      colors: [
+                        c.logoColor.withOpacity(0.4),
+                        c.logoColor.withOpacity(0.15),
+                      ],
+                    ),
+                    border: Border.all(color: c.logoColor.withOpacity(0.4)),
+                  ),
+                  child: c.logoBytes != null
+                      ? ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child:
+                    Image.memory(c.logoBytes!, fit: BoxFit.cover),
+                  )
+                      : Center(
+                    child: Text(
+                      c.companyName.isNotEmpty
+                          ? c.companyName[0].toUpperCase()
+                          : '?',
+                      style: GoogleFonts.bricolageGrotesque(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        client.companyName,
+                        c.companyName,
                         style: GoogleFonts.outfit(
                           fontSize: 14,
                           fontWeight: FontWeight.w700,
                           color: AppColors.textDark,
                         ),
                       ),
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          Icon(platform.icon,
-                              size: 12, color: platform.color),
-                          const SizedBox(width: 6),
-                          Text(
-                            handle,
-                            style: GoogleFonts.outfit(
-                              fontSize: 12,
-                              color: platform.color,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                Container(
-                  padding:
-                  const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(50),
-                    color: (isMetaConnected ? AppColors.green : AppColors.amber)
-                        .withOpacity(0.15),
-                    border: Border.all(
-                      color:
-                      (isMetaConnected ? AppColors.green : AppColors.amber)
-                          .withOpacity(0.4),
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        isMetaConnected
-                            ? Icons.verified_rounded
-                            : Icons.warning_amber_rounded,
-                        size: 11,
-                        color: isMetaConnected
-                            ? AppColors.green
-                            : AppColors.amber,
-                      ),
-                      const SizedBox(width: 4),
+                      const SizedBox(height: 2),
                       Text(
-                        isMetaConnected ? 'Connected' : 'Pending',
+                        c.socialHandles.isEmpty
+                            ? 'No handles yet'
+                            : '${c.socialHandles.length} handle(s)',
                         style: GoogleFonts.outfit(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                          color: isMetaConnected
-                              ? AppColors.green
-                              : AppColors.amber,
+                          fontSize: 11,
+                          color: AppColors.textDarkMuted,
                         ),
                       ),
                     ],
                   ),
                 ),
+                Icon(Icons.arrow_forward_rounded,
+                    size: 16, color: c.logoColor),
               ],
             ),
-          );
-        }),
-    ]);
-  }
-
-  Widget _buildCreateContentForm() {
-    return CreateContentForm(
-      clients: _clients,
-      lockedClient: _selectedClient,
-      onSave: (post) {
-        setState(() {
-          _scheduledPosts.add(post);
-          final isArchiveType = post.type == 'Story' || post.type == 'Reel';
-          if (isArchiveType) {
-            _mediaArchive.add(MediaItem(
-              title: post.title,
-              caption: post.caption,
-              clientName: post.clientName,
-              platform: post.platform,
-              type: post.type,
-              postedAt: post.scheduledAt,
-              color: post.color,
-              imageBytes: post.imageBytes,
-              isArchived: true,
-            ));
-          }
-        });
-        _showSnack(
-            'Content successfully created and scheduled!', AppColors.green);
-      },
-      onCancel: () => setState(() => _activeSubSection = ''),
+          ),
+        ),
+      ),
     );
   }
 
-  Widget _buildDrafts() {
+  // ═══════════════════════════════════════════════════════════════════════
+  // ALL PLATFORMS — combined responsive list of every connected account
+  // ═══════════════════════════════════════════════════════════════════════
+  Widget _buildAllPlatformsScreen() {
+    // Build a flat list: one entry per (client, platform) pair.
+    final entries = <_ConnectedAccountEntry>[];
+    for (final c in _clients) {
+      for (final p in kSocialPlatforms) {
+        final handle = c.socialHandles[p.name];
+        if (handle != null && handle.isNotEmpty) {
+          entries.add(_ConnectedAccountEntry(
+            client: c,
+            platform: p,
+            handle: handle,
+            metaConnected: c.metaConnected[p.name] ?? false,
+          ));
+        }
+      }
+    }
+
     return _scrollWrapper(children: [
-      buildSectionTitle('Drafts'),
-      const SizedBox(height: 12),
-      buildEmptyState(
-        icon: Icons.drafts_rounded,
-        title: 'No drafts',
-        subtitle: 'Your saved drafts will appear here.',
+      buildSectionTitle('All Connected Platforms (${entries.length})'),
+      const SizedBox(height: 4),
+      Text(
+        'Every social account linked across all clients, in one responsive list.',
+        style: GoogleFonts.outfit(
+            fontSize: 11.5, color: AppColors.textDarkMuted),
       ),
+      const SizedBox(height: 12),
+
+      // ── Compact stats summary strip
+      _allPlatformsSummary(entries),
+      const SizedBox(height: 16),
+
+      if (entries.isEmpty)
+        buildEmptyState(
+          icon: Icons.link_off_rounded,
+          title: 'No connected platforms yet',
+          subtitle:
+          'Use Social Accounts → Add Handles to link a client\'s accounts.',
+        )
+      else
+      // ── Responsive list (1 col on mobile, 2 col on tablet, 3 col on desktop)
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final w = constraints.maxWidth;
+            final columns = w > 1100
+                ? 3
+                : w > 720
+                ? 2
+                : 1;
+
+            if (columns == 1) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: entries
+                    .map((e) => Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: _allPlatformsCard(e),
+                ))
+                    .toList(),
+              );
+            }
+
+            // Use a grid for 2/3 columns
+            return GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: columns,
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 12,
+                // ~ 150 px card height; adjust based on width so it stays tidy
+                childAspectRatio: columns == 2 ? 2.6 : 2.8,
+              ),
+              itemCount: entries.length,
+              itemBuilder: (context, i) => _allPlatformsCard(entries[i]),
+            );
+          },
+        ),
     ]);
   }
 
-  Widget _buildMediaArchive() {
-    var items = _mediaArchive;
-    if (_selectedClient != null) {
-      items = items
-          .where((m) => m.clientName == _selectedClient!.companyName)
-          .toList();
+  Widget _allPlatformsSummary(List<_ConnectedAccountEntry> entries) {
+    final Map<String, int> countsPerPlatform = {};
+    for (final e in entries) {
+      countsPerPlatform[e.platform.name] =
+          (countsPerPlatform[e.platform.name] ?? 0) + 1;
     }
-    final archived = items.where((m) => m.isArchived).toList();
-    final active = items.where((m) => !m.isArchived).toList();
 
-    return _scrollWrapper(children: [
-      Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Flexible(
-              child: buildSectionTitle('Media Archive (${archived.length})')),
-          Text(
-            _selectedClient == null
-                ? 'Stories & Reels auto-archived'
-                : 'For ${_selectedClient!.companyName}',
-            style: GoogleFonts.outfit(
-                fontSize: 11, color: AppColors.textDarkMuted),
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.blue.withOpacity(0.3)),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.blue.withOpacity(0.08),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
           ),
         ],
       ),
-      const SizedBox(height: 12),
-      if (active.isNotEmpty) ...[
-        Text(
-          'Recent',
-          style: GoogleFonts.outfit(
-            fontSize: 13,
-            fontWeight: FontWeight.w700,
-            color: AppColors.textDarkSoft,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Platform Summary',
+            style: GoogleFonts.outfit(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textDarkSoft,
+            ),
           ),
-        ),
-        const SizedBox(height: 8),
-        _buildMediaGrid(active),
-        const SizedBox(height: 20),
-      ],
-      Text(
-        'Archive',
-        style: GoogleFonts.outfit(
-          fontSize: 13,
-          fontWeight: FontWeight.w700,
-          color: AppColors.textDarkSoft,
-        ),
-      ),
-      const SizedBox(height: 8),
-      if (archived.isEmpty)
-        buildEmptyState(
-          icon: Icons.photo_library_outlined,
-          title: 'No archived media',
-          subtitle:
-          'Stories & Reels you post will be archived here automatically.',
-        )
-      else
-        _buildMediaGrid(archived),
-    ]);
-  }
-
-  Widget _buildMediaGrid(List<MediaItem> items) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final crossAxisCount = constraints.maxWidth > 900
-            ? 4
-            : constraints.maxWidth > 600
-            ? 3
-            : 2;
-        return GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: crossAxisCount,
-            crossAxisSpacing: 12,
-            mainAxisSpacing: 12,
-            childAspectRatio: 0.78,
-          ),
-          itemCount: items.length,
-          itemBuilder: (context, i) {
-            final m = items[i];
-            return Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: m.color.withOpacity(0.3)),
-                boxShadow: [
-                  BoxShadow(
-                    color: m.color.withOpacity(0.06),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Expanded(
-                    child: ClipRRect(
-                      borderRadius: const BorderRadius.vertical(
-                          top: Radius.circular(13)),
-                      child: m.imageBytes != null
-                          ? Image.memory(m.imageBytes!, fit: BoxFit.cover)
-                          : Container(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              m.color.withOpacity(0.25),
-                              m.color.withOpacity(0.08),
-                            ],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
-                        ),
-                        child: Icon(
-                          m.type == 'Reel'
-                              ? Icons.movie_creation_rounded
-                              : m.type == 'Story'
-                              ? Icons.auto_stories_rounded
-                              : m.type == 'Video'
-                              ? Icons.videocam_rounded
-                              : Icons.image_rounded,
-                          size: 40,
-                          color: m.color,
-                        ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: kSocialPlatforms.map((p) {
+              final count = countsPerPlatform[p.name] ?? 0;
+              return Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(50),
+                  color: p.color.withOpacity(0.10),
+                  border: Border.all(color: p.color.withOpacity(0.35)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(p.icon, size: 12, color: p.color),
+                    const SizedBox(width: 6),
+                    Text(
+                      '${p.name}: ',
+                      style: GoogleFonts.outfit(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textDarkSoft,
                       ),
                     ),
+                    Text(
+                      '$count',
+                      style: GoogleFonts.bricolageGrotesque(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        color: p.color,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _allPlatformsCard(_ConnectedAccountEntry e) {
+    final p = e.platform;
+    final c = e.client;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () {
+          // Tap → open Add Handles for this client (so you can edit)
+          setState(() {
+            _socialHandlesClient = c;
+            _activeSubSection = 'Add Handles';
+            _expandedMenus['social'] = true;
+          });
+        },
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: p.color.withOpacity(0.3)),
+            boxShadow: [
+              BoxShadow(
+                color: p.color.withOpacity(0.06),
+                blurRadius: 14,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              // Platform icon
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  gradient: LinearGradient(
+                    colors: [
+                      p.color.withOpacity(0.25),
+                      p.color.withOpacity(0.08),
+                    ],
                   ),
-                  Padding(
-                    padding: const EdgeInsets.all(10),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                  border: Border.all(color: p.color.withOpacity(0.4)),
+                ),
+                child: Icon(p.icon, color: p.color, size: 22),
+              ),
+              const SizedBox(width: 12),
+              // Middle: client name + handle
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
                       children: [
-                        Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(4),
-                                color: m.color.withOpacity(0.15),
-                              ),
-                              child: Text(
-                                m.type,
-                                style: GoogleFonts.outfit(
-                                  fontSize: 8.5,
-                                  fontWeight: FontWeight.w700,
-                                  color: m.color,
-                                ),
-                              ),
+                        Flexible(
+                          child: Text(
+                            c.companyName,
+                            style: GoogleFonts.outfit(
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.textDark,
                             ),
-                          ],
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          m.title,
-                          style: GoogleFonts.outfit(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.textDark,
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
                           ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
                         ),
-                        const SizedBox(height: 2),
-                        Text(
-                          m.caption,
-                          style: GoogleFonts.outfit(
-                              fontSize: 10, color: AppColors.textDarkSoft),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          '${m.clientName} • ${m.platform}',
-                          style: GoogleFonts.outfit(
-                              fontSize: 9.5, color: AppColors.textDarkMuted),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          formatDateTime(m.postedAt),
-                          style: GoogleFonts.outfit(
-                              fontSize: 9, color: AppColors.amber),
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 1),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(4),
+                            color: p.color.withOpacity(0.12),
+                          ),
+                          child: Text(
+                            p.name,
+                            style: GoogleFonts.outfit(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w800,
+                              color: p.color,
+                            ),
+                          ),
                         ),
                       ],
                     ),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  DateTime _calendarMonth = DateTime.now();
-  DateTime _selectedDate = DateTime.now();
-
-  Widget _buildCalendarSection() {
-    return _scrollWrapper(children: [
-      // ── Header row (title + pick date)
-      Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Flexible(child: buildSectionTitle('Content Calendar')),
-          TextButton.icon(
-            onPressed: () async {
-              final picked = await showDatePicker(
-                context: context,
-                initialDate: _selectedDate,
-                firstDate: DateTime(2020),
-                lastDate: DateTime(2100),
-                builder: (context, child) => Theme(
-                  data: ThemeData.light().copyWith(
-                    colorScheme: const ColorScheme.light(
-                      primary: AppColors.purple,
-                      onPrimary: Colors.white,
-                      surface: Colors.white,
-                      onSurface: AppColors.textDark,
-                    ),
-                    dialogBackgroundColor: Colors.white,
-                  ),
-                  child: child!,
-                ),
-              );
-              if (picked != null) {
-                setState(() {
-                  _selectedDate = picked;
-                  _calendarMonth = DateTime(picked.year, picked.month);
-                });
-              }
-            },
-            icon: const Icon(Icons.calendar_today_rounded,
-                size: 16, color: AppColors.purple),
-            label: Text(
-              'Pick Date',
-              style: GoogleFonts.outfit(
-                  color: AppColors.purple, fontWeight: FontWeight.w600),
-            ),
-          ),
-        ],
-      ),
-      if (_selectedClient != null) ...[
-        const SizedBox(height: 4),
-        Text(
-          'Filtered by: ${_selectedClient!.companyName}',
-          style: GoogleFonts.outfit(
-              fontSize: 11.5, color: AppColors.textDarkMuted),
-        ),
-      ],
-      const SizedBox(height: 12),
-
-      // ═════════════════════════════════════════════════════════════════
-      // RESPONSIVE SPLIT: Calendar (left) + Scheduled Posts (right)
-      //
-      // • Wide (>= 900px): two columns side-by-side.
-      //     - Left  : calendar (flex 4)
-      //     - Right : scheduled posts for the selected date (flex 5)
-      // • Narrow (< 900px): stacked vertically (calendar on top,
-      //   posts below) so nothing gets cramped.
-      // ═════════════════════════════════════════════════════════════════
-      LayoutBuilder(
-        builder: (context, constraints) {
-          final isWide = constraints.maxWidth >= 900;
-
-          final calendarSide = _buildCalendarWidget();
-
-          final postsSide = Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              buildSectionTitle(
-                  'Scheduled Posts on ${formatDateLong(_selectedDate)}'),
-              const SizedBox(height: 10),
-              _buildPostsForSelectedDate(),
-            ],
-          );
-
-          if (isWide) {
-            // ── Side-by-side layout
-            return Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Calendar column (fixed-ish, matches its own max width)
-                Expanded(
-                  flex: 4,
-                  child: Align(
-                    alignment: Alignment.topLeft,
-                    child: calendarSide,
-                  ),
-                ),
-                const SizedBox(width: 16),
-                // Scheduled posts column
-                Expanded(
-                  flex: 5,
-                  child: postsSide,
-                ),
-              ],
-            );
-          }
-
-          // ── Stacked layout (mobile / tablet)
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              calendarSide,
-              const SizedBox(height: 20),
-              postsSide,
-            ],
-          );
-        },
-      ),
-    ]);
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════
-  // SINGLE, RESPONSIVE CALENDAR WIDGET
-  //
-  // • Width is capped (max 720 px) so it stays card-like on wide screens
-  //   — matching Photo 1 — instead of stretching across the whole area.
-  // • Cell height is FIXED at a compact value (56–70 px) so it never
-  //   stretches vertically — matching Photo 1 rather than Photo 2.
-  // • On small screens the calendar shrinks fluidly.
-  // ═══════════════════════════════════════════════════════════════════════
-  Widget _buildCalendarWidget() {
-    final firstDay = DateTime(_calendarMonth.year, _calendarMonth.month, 1);
-    final daysInMonth =
-        DateTime(_calendarMonth.year, _calendarMonth.month + 1, 0).day;
-    final startWeekday = firstDay.weekday % 7;
-
-    return Align(
-      alignment: Alignment.topLeft,
-      child: LayoutBuilder(
-        builder: (context, outer) {
-          // Cap width so calendar doesn't get huge on desktop.
-          final cardWidth = outer.maxWidth.clamp(280.0, 640.0);
-
-          // Adaptive, but capped, cell height based on available width.
-          // - Narrow (< 380 px content): 60 px  → compact like Photo 1
-          // - Medium  (380–520 px)     : 66 px
-          // - Wide    (> 520 px)       : 72 px (capped, so it doesn't
-          //                                    stretch like Photo 2)
-          final cellHeight = cardWidth < 380
-              ? 60.0
-              : cardWidth < 520
-              ? 66.0
-              : 72.0;
-
-          const crossSpacing = 6.0;
-          final innerWidth = cardWidth - 24; // minus padding
-          final cellWidth = (innerWidth - crossSpacing * 6) / 7;
-          final ratio = cellWidth / cellHeight;
-
-          return SizedBox(
-            width: cardWidth,
-            child: Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                    color: AppColors.amber.withOpacity(0.3), width: 1),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.amber.withOpacity(0.08),
-                    blurRadius: 20,
-                    offset: const Offset(0, 8),
-                  ),
-                ],
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // ── Month header
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      _calNavBtn(
-                        Icons.chevron_left_rounded,
-                            () => setState(() {
-                          _calendarMonth = DateTime(
-                              _calendarMonth.year, _calendarMonth.month - 1);
-                        }),
-                      ),
-                      Text(
-                        formatMonthYear(_calendarMonth),
-                        style: GoogleFonts.bricolageGrotesque(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.textDark,
-                        ),
-                      ),
-                      _calNavBtn(
-                        Icons.chevron_right_rounded,
-                            () => setState(() {
-                          _calendarMonth = DateTime(
-                              _calendarMonth.year, _calendarMonth.month + 1);
-                        }),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-
-                  // ── Weekday header
-                  Row(
-                    children: ['S', 'M', 'T', 'W', 'T', 'F', 'S']
-                        .map((d) => Expanded(
-                      child: Center(
-                        child: Text(
-                          d,
-                          style: GoogleFonts.outfit(
-                            fontSize: 10.5,
-                            color: AppColors.textDarkMuted,
-                            fontWeight: FontWeight.w700,
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Icon(p.icon, size: 11, color: p.color),
+                        const SizedBox(width: 5),
+                        Flexible(
+                          child: Text(
+                            e.handle,
+                            style: GoogleFonts.outfit(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w600,
+                              color: p.color,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
                           ),
                         ),
-                      ),
-                    ))
-                        .toList(),
-                  ),
-                  const SizedBox(height: 6),
-
-                  // ── Day grid (fixed compact cell height)
-                  GridView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    gridDelegate:
-                    SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 7,
-                      mainAxisSpacing: 6,
-                      crossAxisSpacing: crossSpacing,
-                      childAspectRatio: ratio,
+                      ],
                     ),
-                    itemCount: startWeekday + daysInMonth,
-                    itemBuilder: (context, i) {
-                      if (i < startWeekday) return const SizedBox();
-                      final day = i - startWeekday + 1;
-                      final date = DateTime(
-                          _calendarMonth.year, _calendarMonth.month, day);
-                      final isSelected = isSameDay(date, _selectedDate);
-                      final isToday = isSameDay(date, DateTime.now());
-                      final scopedPosts = _selectedClient == null
-                          ? _scheduledPosts
-                          : _scheduledPosts
-                          .where((p) =>
-                      p.clientName ==
-                          _selectedClient!.companyName)
-                          .toList();
-                      final postsOnDay = scopedPosts
-                          .where((p) => isSameDay(p.scheduledAt, date))
-                          .toList();
-
-                      return _calendarDayCell(
-                        day: day,
-                        isSelected: isSelected,
-                        isToday: isToday,
-                        postsOnDay: postsOnDay,
-                        onTap: () =>
-                            setState(() => _selectedDate = date),
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 10),
-
-                  // ── Legend
-                  Wrap(
-                    spacing: 10,
-                    runSpacing: 6,
-                    alignment: WrapAlignment.center,
-                    children: [
-                      _calendarLegend(AppColors.instagram, 'Instagram'),
-                      _calendarLegend(AppColors.facebook, 'Facebook'),
-                      _calendarLegend(AppColors.youtube, 'YouTube'),
-                      _calendarLegend(AppColors.linkedin, 'LinkedIn'),
-                      _calendarLegend(AppColors.threads, 'Threads'),
-                    ],
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  /// Mini nav button for the calendar header.
-  Widget _calNavBtn(IconData icon, VoidCallback onTap) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Container(
-        width: 26,
-        height: 26,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(8),
-          color: AppColors.scaffoldLight,
-          border: Border.all(color: AppColors.borderLight),
-        ),
-        child: Icon(icon, size: 15, color: AppColors.textDark),
-      ),
-    );
-  }
-
-  /// Compact single day cell (day number + platform dots).
-  Widget _calendarDayCell({
-    required int day,
-    required bool isSelected,
-    required bool isToday,
-    required List<ScheduledPost> postsOnDay,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
-        padding: const EdgeInsets.all(4),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(8),
-          color: isSelected
-              ? AppColors.amber.withOpacity(0.25)
-              : isToday
-              ? AppColors.cyan.withOpacity(0.15)
-              : AppColors.scaffoldLight,
-          border: Border.all(
-            color: isSelected
-                ? AppColors.amber
-                : isToday
-                ? AppColors.cyan.withOpacity(0.6)
-                : AppColors.borderLight,
-            width: isSelected ? 1.4 : 1,
+              // Status pill
+              Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(50),
+                  color:
+                  (e.metaConnected ? AppColors.green : AppColors.amber)
+                      .withOpacity(0.15),
+                  border: Border.all(
+                    color:
+                    (e.metaConnected ? AppColors.green : AppColors.amber)
+                        .withOpacity(0.4),
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      e.metaConnected
+                          ? Icons.verified_rounded
+                          : Icons.warning_amber_rounded,
+                      size: 11,
+                      color: e.metaConnected
+                          ? AppColors.green
+                          : AppColors.amber,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      e.metaConnected ? 'Connected' : 'Pending',
+                      style: GoogleFonts.outfit(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        color: e.metaConnected
+                            ? AppColors.green
+                            : AppColors.amber,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
-        child: Stack(
-          children: [
-            Center(
-              child: Text(
-                '$day',
-                style: GoogleFonts.outfit(
-                  fontSize: 11,
-                  fontWeight:
-                  isSelected ? FontWeight.w800 : FontWeight.w600,
-                  color: AppColors.textDark,
-                ),
-              ),
-            ),
-            if (postsOnDay.isNotEmpty)
-              Positioned(
-                bottom: 3,
-                left: 0,
-                right: 0,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: postsOnDay.take(3).map((p) {
-                    return Container(
-                      width: 4,
-                      height: 4,
-                      margin: const EdgeInsets.symmetric(horizontal: 1),
-                      decoration: BoxDecoration(
-                          shape: BoxShape.circle, color: p.color),
-                    );
-                  }).toList(),
-                ),
-              ),
-          ],
-        ),
       ),
-    );
-  }
-
-  /// Legend chip.
-  Widget _calendarLegend(Color c, String label) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 8,
-          height: 8,
-          decoration: BoxDecoration(shape: BoxShape.circle, color: c),
-        ),
-        const SizedBox(width: 4),
-        Text(
-          label,
-          style: GoogleFonts.outfit(
-              fontSize: 9.5, color: AppColors.textDarkMuted),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildPostsForSelectedDate() {
-    final scoped = _selectedClient == null
-        ? _scheduledPosts
-        : _scheduledPosts
-        .where((p) => p.clientName == _selectedClient!.companyName)
-        .toList();
-    final posts =
-    scoped.where((p) => isSameDay(p.scheduledAt, _selectedDate)).toList();
-
-    if (posts.isEmpty) {
-      return buildEmptyState(
-        icon: Icons.event_busy_rounded,
-        title: 'No posts on this date',
-        subtitle: 'Select another date or schedule new content.',
-      );
-    }
-
-    // Wrap the list in a Column with stretch so card widths match the
-    // right-hand column nicely.
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: posts.map((post) => buildPostCard(post)).toList(),
     );
   }
 
@@ -3139,4 +2469,18 @@ class _Stat {
   final IconData icon;
   final Color color;
   _Stat(this.label, this.value, this.icon, this.color);
+}
+
+class _ConnectedAccountEntry {
+  final ClientModel client;
+  final SocialPlatform platform;
+  final String handle;
+  final bool metaConnected;
+
+  _ConnectedAccountEntry({
+    required this.client,
+    required this.platform,
+    required this.handle,
+    required this.metaConnected,
+  });
 }

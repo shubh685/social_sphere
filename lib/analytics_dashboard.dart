@@ -1745,7 +1745,7 @@ class _InlineDayCell extends StatelessWidget {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// ADD CLIENT FORM (with Connect button beside each social handle)
+// ADD CLIENT FORM (Client Registration only — no social handles)
 // ═════════════════════════════════════════════════════════════════════════════
 class AddClientForm extends StatefulWidget {
   final ValueChanged<ClientModel> onSave;
@@ -1768,15 +1768,6 @@ class _AddClientFormState extends State<AddClientForm> {
   final _website = TextEditingController();
   final _mobile = TextEditingController();
   final _email = TextEditingController();
-
-  final Map<String, TextEditingController> _handleControllers = {
-    for (final p in kSocialPlatforms) p.name: TextEditingController(),
-  };
-
-  // Tracks which platforms user wants to connect (toggles "Connect" button)
-  final Map<String, bool> _connectRequested = {
-    for (final p in kSocialPlatforms) p.name: false,
-  };
 
   Color _pickedColor = AppColors.purple;
   Uint8List? _logoBytes;
@@ -1803,9 +1794,6 @@ class _AddClientFormState extends State<AddClientForm> {
     _website.dispose();
     _mobile.dispose();
     _email.dispose();
-    for (final c in _handleControllers.values) {
-      c.dispose();
-    }
     super.dispose();
   }
 
@@ -1838,29 +1826,6 @@ class _AddClientFormState extends State<AddClientForm> {
     }
   }
 
-  /// Simulates OAuth-style connect for a platform.
-  void _toggleConnect(SocialPlatform p) {
-    final currentlyConnected = _connectRequested[p.name] ?? false;
-    setState(() {
-      _connectRequested[p.name] = !currentlyConnected;
-    });
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          currentlyConnected
-              ? 'Disconnected ${p.name}'
-              : 'Connected ${p.name} — OAuth simulated.',
-          style: GoogleFonts.outfit(
-              color: Colors.white, fontWeight: FontWeight.w600),
-        ),
-        backgroundColor:
-        (currentlyConnected ? AppColors.amber : p.color).withOpacity(0.9),
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 2),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
@@ -1890,6 +1855,15 @@ class _AddClientFormState extends State<AddClientForm> {
                   fontSize: 20,
                   fontWeight: FontWeight.w800,
                   color: AppColors.textDark,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Register the client. You can add their social handles next from the Social Accounts section.',
+                style: GoogleFonts.outfit(
+                  fontSize: 11.5,
+                  color: AppColors.textDarkMuted,
+                  height: 1.4,
                 ),
               ),
               const SizedBox(height: 16),
@@ -2008,150 +1982,12 @@ class _AddClientFormState extends State<AddClientForm> {
               _buildField('Email ID *', _email,
                   keyboardType: TextInputType.emailAddress,
                   validator: (v) => v!.isEmpty ? 'Required' : null),
-              const SizedBox(height: 20),
-              Row(
-                children: [
-                  const Icon(Icons.share_rounded,
-                      size: 16, color: AppColors.purple),
-                  const SizedBox(width: 6),
-                  Text(
-                    'Social Media Handles',
-                    style: GoogleFonts.outfit(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textDark,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Enter the handle, then tap Connect to link the account.',
-                style: GoogleFonts.outfit(
-                    fontSize: 11, color: AppColors.textDarkMuted),
-              ),
-              const SizedBox(height: 12),
-              ...kSocialPlatforms.map((p) {
-                final isConnected = _connectRequested[p.name] ?? false;
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 40,
-                        height: 40,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(10),
-                          color: p.color.withOpacity(0.1),
-                          border:
-                          Border.all(color: p.color.withOpacity(0.35)),
-                        ),
-                        child: Icon(p.icon, color: p.color, size: 20),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: TextFormField(
-                          controller: _handleControllers[p.name],
-                          style: GoogleFonts.outfit(color: AppColors.textDark),
-                          decoration: InputDecoration(
-                            prefixText: '${p.handlePrefix} ',
-                            prefixStyle: GoogleFonts.outfit(
-                              color: p.color,
-                              fontWeight: FontWeight.w600,
-                            ),
-                            hintText: '${p.name} handle',
-                            hintStyle: GoogleFonts.outfit(
-                              color: AppColors.textDarkMuted,
-                              fontSize: 12,
-                            ),
-                            filled: true,
-                            fillColor: AppColors.scaffoldLight,
-                            isDense: true,
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide.none,
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide:
-                              BorderSide(color: AppColors.borderLight),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide(
-                                  color: p.color.withOpacity(0.6),
-                                  width: 1.5),
-                            ),
-                            contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 14, vertical: 14),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      // ── CONNECT BUTTON ─────────────────────────────────
-                      GestureDetector(
-                        onTap: () => _toggleConnect(p),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 12),
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(12),
-                            color: isConnected
-                                ? p.color.withOpacity(0.15)
-                                : Colors.white,
-                            border: Border.all(
-                              color: isConnected
-                                  ? p.color
-                                  : p.color.withOpacity(0.4),
-                              width: isConnected ? 1.5 : 1,
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                isConnected
-                                    ? Icons.check_circle_rounded
-                                    : Icons.link_rounded,
-                                size: 15,
-                                color: p.color,
-                              ),
-                              const SizedBox(width: 5),
-                              Text(
-                                isConnected ? 'Connected' : 'Connect',
-                                style: GoogleFonts.outfit(
-                                  fontSize: 11.5,
-                                  fontWeight: FontWeight.w700,
-                                  color: p.color,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }),
               const SizedBox(height: 24),
               ElevatedButton(
                 onPressed: () {
                   if (!_formKey.currentState!.validate()) return;
-                  final Map<String, String> handles = {};
-                  final Map<String, bool> metaConn = {};
-                  for (final p in kSocialPlatforms) {
-                    final text = _handleControllers[p.name]!.text.trim();
-                    if (text.isNotEmpty) {
-                      handles[p.name] = text.startsWith(p.handlePrefix)
-                          ? text
-                          : '${p.handlePrefix}$text';
-                      final connected = _connectRequested[p.name] ?? false;
-                      if (connected || p.usesMetaIntegration) {
-                        metaConn[p.name] = true;
-                      }
-                    }
-                  }
+                  // Handles are intentionally empty here — they will be
+                  // filled in from the Social Accounts → Add Handles form.
                   widget.onSave(ClientModel(
                     companyName: _companyName.text.trim(),
                     logoColor: _pickedColor,
@@ -2160,8 +1996,8 @@ class _AddClientFormState extends State<AddClientForm> {
                     website: _website.text.trim(),
                     mobile: _mobile.text.trim(),
                     email: _email.text.trim(),
-                    socialHandles: handles,
-                    metaConnected: metaConn,
+                    socialHandles: const {},
+                    metaConnected: const {},
                   ));
                 },
                 style: ElevatedButton.styleFrom(
@@ -2222,6 +2058,342 @@ class _AddClientFormState extends State<AddClientForm> {
         ),
         contentPadding:
         const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      ),
+    );
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// SOCIAL HANDLES FORM (Social Accounts only — no client registration fields)
+// ═════════════════════════════════════════════════════════════════════════════
+class SocialHandlesForm extends StatefulWidget {
+  /// The client whose handles we are editing/adding.
+  final ClientModel client;
+
+  /// Called with an updated copy of the client once the user saves.
+  final ValueChanged<ClientModel> onSave;
+
+  /// Called when the user cancels.
+  final VoidCallback onCancel;
+
+  const SocialHandlesForm({
+    super.key,
+    required this.client,
+    required this.onSave,
+    required this.onCancel,
+  });
+
+  @override
+  State<SocialHandlesForm> createState() => _SocialHandlesFormState();
+}
+
+class _SocialHandlesFormState extends State<SocialHandlesForm> {
+  final _formKey = GlobalKey<FormState>();
+
+  final Map<String, TextEditingController> _handleControllers = {
+    for (final p in kSocialPlatforms) p.name: TextEditingController(),
+  };
+
+  /// Tracks which platforms user has requested to connect (drives the button).
+  final Map<String, bool> _connectRequested = {
+    for (final p in kSocialPlatforms) p.name: false,
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    // Pre-fill existing handles
+    for (final p in kSocialPlatforms) {
+      final existing = widget.client.socialHandles[p.name] ?? '';
+      final stripped = existing.startsWith(p.handlePrefix)
+          ? existing.substring(p.handlePrefix.length)
+          : existing;
+      _handleControllers[p.name]!.text = stripped;
+      _connectRequested[p.name] = widget.client.metaConnected[p.name] ?? false;
+    }
+  }
+
+  @override
+  void dispose() {
+    for (final c in _handleControllers.values) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  void _toggleConnect(SocialPlatform p) {
+    final currentlyConnected = _connectRequested[p.name] ?? false;
+    setState(() {
+      _connectRequested[p.name] = !currentlyConnected;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          currentlyConnected
+              ? 'Disconnected ${p.name}'
+              : 'Connected ${p.name} — OAuth simulated.',
+          style: GoogleFonts.outfit(
+              color: Colors.white, fontWeight: FontWeight.w600),
+        ),
+        backgroundColor:
+        (currentlyConnected ? AppColors.amber : p.color).withOpacity(0.9),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: AppColors.borderLight),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 16,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // ── Header with the client we're editing
+              Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      gradient: LinearGradient(
+                        colors: [
+                          widget.client.logoColor.withOpacity(0.4),
+                          widget.client.logoColor.withOpacity(0.15),
+                        ],
+                      ),
+                      border: Border.all(
+                          color: widget.client.logoColor.withOpacity(0.5)),
+                    ),
+                    child: widget.client.logoBytes != null
+                        ? ClipRRect(
+                      borderRadius: BorderRadius.circular(11),
+                      child: Image.memory(widget.client.logoBytes!,
+                          fit: BoxFit.cover),
+                    )
+                        : Center(
+                      child: Text(
+                        widget.client.companyName.isNotEmpty
+                            ? widget.client.companyName[0].toUpperCase()
+                            : '?',
+                        style: GoogleFonts.bricolageGrotesque(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Social Media Handles',
+                          style: GoogleFonts.bricolageGrotesque(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.textDark,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          widget.client.companyName,
+                          style: GoogleFonts.outfit(
+                            fontSize: 12,
+                            color: AppColors.textDarkMuted,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Enter the handle, then tap Connect to link the account.',
+                style: GoogleFonts.outfit(
+                    fontSize: 11, color: AppColors.textDarkMuted),
+              ),
+              const SizedBox(height: 16),
+
+              // ── Platform rows (same design as the original form)
+              ...kSocialPlatforms.map((p) {
+                final isConnected = _connectRequested[p.name] ?? false;
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(10),
+                          color: p.color.withOpacity(0.1),
+                          border:
+                          Border.all(color: p.color.withOpacity(0.35)),
+                        ),
+                        child: Icon(p.icon, color: p.color, size: 20),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: TextFormField(
+                          controller: _handleControllers[p.name],
+                          style: GoogleFonts.outfit(color: AppColors.textDark),
+                          decoration: InputDecoration(
+                            prefixText: '${p.handlePrefix} ',
+                            prefixStyle: GoogleFonts.outfit(
+                              color: p.color,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            hintText: '${p.name} handle',
+                            hintStyle: GoogleFonts.outfit(
+                              color: AppColors.textDarkMuted,
+                              fontSize: 12,
+                            ),
+                            filled: true,
+                            fillColor: AppColors.scaffoldLight,
+                            isDense: true,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide.none,
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide:
+                              BorderSide(color: AppColors.borderLight),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                  color: p.color.withOpacity(0.6),
+                                  width: 1.5),
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 14, vertical: 14),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      // ── CONNECT BUTTON
+                      GestureDetector(
+                        onTap: () => _toggleConnect(p),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 12),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(12),
+                            color: isConnected
+                                ? p.color.withOpacity(0.15)
+                                : Colors.white,
+                            border: Border.all(
+                              color: isConnected
+                                  ? p.color
+                                  : p.color.withOpacity(0.4),
+                              width: isConnected ? 1.5 : 1,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                isConnected
+                                    ? Icons.check_circle_rounded
+                                    : Icons.link_rounded,
+                                size: 15,
+                                color: p.color,
+                              ),
+                              const SizedBox(width: 5),
+                              Text(
+                                isConnected ? 'Connected' : 'Connect',
+                                style: GoogleFonts.outfit(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w700,
+                                  color: p.color,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+
+              const SizedBox(height: 24),
+              ElevatedButton(
+                onPressed: () {
+                  if (!_formKey.currentState!.validate()) return;
+
+                  final Map<String, String> handles = {};
+                  final Map<String, bool> metaConn = {};
+                  for (final p in kSocialPlatforms) {
+                    final text = _handleControllers[p.name]!.text.trim();
+                    if (text.isNotEmpty) {
+                      handles[p.name] = text.startsWith(p.handlePrefix)
+                          ? text
+                          : '${p.handlePrefix}$text';
+                      final connected = _connectRequested[p.name] ?? false;
+                      if (connected || p.usesMetaIntegration) {
+                        metaConn[p.name] = true;
+                      }
+                    }
+                  }
+
+                  widget.onSave(ClientModel(
+                    companyName: widget.client.companyName,
+                    logoColor: widget.client.logoColor,
+                    logoBytes: widget.client.logoBytes,
+                    address: widget.client.address,
+                    website: widget.client.website,
+                    mobile: widget.client.mobile,
+                    email: widget.client.email,
+                    socialHandles: handles,
+                    metaConnected: metaConn,
+                  ));
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.purple,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  elevation: 0,
+                ),
+                child: Text(
+                  'Save Social Handles',
+                  style: GoogleFonts.outfit(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

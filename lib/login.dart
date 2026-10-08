@@ -1,8 +1,7 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:socialee_sphere/dashboard.dart';
-
+import 'Apis/api.dart';
 import 'register.dart';
 import 'forgot_pwd.dart';
 
@@ -17,6 +16,7 @@ class _LogINState extends State<LogIN> with TickerProviderStateMixin {
   final _loginEmailController = TextEditingController();
   final _loginPasswordController = TextEditingController();
   bool _obscureLoginPass = true;
+  bool _isLoading = false;
 
   late AnimationController _bgAnimationController;
   late AnimationController _cardAnimationController;
@@ -70,8 +70,40 @@ class _LogINState extends State<LogIN> with TickerProviderStateMixin {
     super.dispose();
   }
 
-  void _handleLogin() {
-    Navigator.push(context, MaterialPageRoute(builder: (context) => Dashboard()));
+  void _showSnackBar(String msg, {bool isError = true}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg, style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.w600)),
+        backgroundColor: isError ? const Color(0xFFFF4757) : const Color(0xFF00E5A0),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  Future<void> _handleLogin() async {
+    final email = _loginEmailController.text.trim();
+    final password = _loginPasswordController.text;
+
+    if (email.isEmpty || password.isEmpty) {
+      _showSnackBar("Please fill in both email and password.");
+      return;
+    }
+
+    setState(() => _isLoading = true);
+    final res = await ApiService.login(email: email, password: password);
+    setState(() => _isLoading = false);
+
+    if (res['status'] == true) {
+      _showSnackBar("Login successful!", isError: false);
+      if (mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const Dashboard()),
+        );
+      }
+    } else {
+      _showSnackBar(res['message'] ?? 'Login failed. Please try again.');
+    }
   }
 
   void _goToRegister() {
@@ -95,10 +127,8 @@ class _LogINState extends State<LogIN> with TickerProviderStateMixin {
     final isTablet = size.width > 600 && size.width <= 1024;
     final isMobile = size.width <= 600;
 
-    final cardWidth =
-    isDesktop ? 480.0 : isTablet ? size.width * 0.65 : size.width * 0.92;
-    final horizontalPadding =
-    isDesktop ? 40.0 : isTablet ? 32.0 : 22.0;
+    final cardWidth = isDesktop ? 480.0 : isTablet ? size.width * 0.65 : size.width * 0.92;
+    final horizontalPadding = isDesktop ? 40.0 : isTablet ? 32.0 : 22.0;
 
     return AnimatedBuilder(
       animation: _bgAnimation,
@@ -107,12 +137,9 @@ class _LogINState extends State<LogIN> with TickerProviderStateMixin {
           decoration: BoxDecoration(
             gradient: LinearGradient(
               colors: [
-                Color.lerp(const Color(0xFF0A0E27), const Color(0xFF1A0B2E),
-                    _bgAnimation.value)!,
-                Color.lerp(const Color(0xFF1E1B4B), const Color(0xFF2D1B69),
-                    _bgAnimation.value)!,
-                Color.lerp(const Color(0xFF311042), const Color(0xFF0F172A),
-                    _bgAnimation.value)!,
+                Color.lerp(const Color(0xFF0A0E27), const Color(0xFF1A0B2E), _bgAnimation.value)!,
+                Color.lerp(const Color(0xFF1E1B4B), const Color(0xFF2D1B69), _bgAnimation.value)!,
+                Color.lerp(const Color(0xFF311042), const Color(0xFF0F172A), _bgAnimation.value)!,
               ],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
@@ -138,8 +165,7 @@ class _LogINState extends State<LogIN> with TickerProviderStateMixin {
                         padding: EdgeInsets.all(horizontalPadding),
                         decoration: BoxDecoration(
                           color: const Color(0xFF0B0F1E).withOpacity(0.88),
-                          borderRadius:
-                          BorderRadius.circular(isMobile ? 22 : 28),
+                          borderRadius: BorderRadius.circular(isMobile ? 22 : 28),
                           border: Border.all(
                             color: _accent.withOpacity(0.35),
                             width: 1.5,
@@ -172,8 +198,7 @@ class _LogINState extends State<LogIN> with TickerProviderStateMixin {
                               obscure: true,
                               isObscured: _obscureLoginPass,
                               icon: Icons.lock_outline_rounded,
-                              onToggleObscure: () => setState(
-                                      () => _obscureLoginPass = !_obscureLoginPass),
+                              onToggleObscure: () => setState(() => _obscureLoginPass = !_obscureLoginPass),
                             ),
                             const SizedBox(height: 12),
                             Align(
@@ -181,11 +206,9 @@ class _LogINState extends State<LogIN> with TickerProviderStateMixin {
                               child: TextButton(
                                 onPressed: _goToForgot,
                                 style: TextButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 8, vertical: 4),
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                   minimumSize: Size.zero,
-                                  tapTargetSize:
-                                  MaterialTapTargetSize.shrinkWrap,
+                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                                 ),
                                 child: Text(
                                   "Forgot Password?",
@@ -199,9 +222,9 @@ class _LogINState extends State<LogIN> with TickerProviderStateMixin {
                             ),
                             const SizedBox(height: 20),
                             _buildPrimaryButton(
-                              label: "Log In",
-                              onPressed: _handleLogin,
-                              icon: Icons.arrow_forward_rounded,
+                              label: _isLoading ? "Logging in..." : "Log In",
+                              onPressed: _isLoading ? () {} : _handleLogin,
+                              icon: _isLoading ? null : Icons.arrow_forward_rounded,
                             ),
                             SizedBox(height: isMobile ? 16 : 22),
                             Center(
@@ -215,9 +238,7 @@ class _LogINState extends State<LogIN> with TickerProviderStateMixin {
                                       color: Colors.white.withOpacity(0.5),
                                     ),
                                     children: [
-                                      const TextSpan(
-                                          text:
-                                          "Don't have an agency account? "),
+                                      const TextSpan(text: "Don't have an agency account? "),
                                       TextSpan(
                                         text: "Register",
                                         style: GoogleFonts.outfit(
@@ -253,16 +274,12 @@ class _LogINState extends State<LogIN> with TickerProviderStateMixin {
             Positioned(
               top: -size.height * 0.1 + (_bgAnimation.value * 40),
               left: -size.width * 0.1,
-              child: _glowOrb(
-                  size: size.width * 0.45,
-                  color: _accent.withOpacity(0.12)),
+              child: _glowOrb(size: size.width * 0.45, color: _accent.withOpacity(0.12)),
             ),
             Positioned(
               bottom: -size.height * 0.15 - (_bgAnimation.value * 30),
               right: -size.width * 0.1,
-              child: _glowOrb(
-                  size: size.width * 0.5,
-                  color: const Color(0xFFA855F7).withOpacity(0.1)),
+              child: _glowOrb(size: size.width * 0.5, color: const Color(0xFFA855F7).withOpacity(0.1)),
             ),
           ],
         );
@@ -305,7 +322,7 @@ class _LogINState extends State<LogIN> with TickerProviderStateMixin {
             ),
             const SizedBox(width: 12),
             Text(
-              "Welcome Back",
+              "Agency Sign IN",
               style: GoogleFonts.outfit(
                 fontSize: isMobile ? 24 : 28,
                 fontWeight: FontWeight.w700,
@@ -341,27 +358,17 @@ class _LogINState extends State<LogIN> with TickerProviderStateMixin {
       controller: controller,
       obscureText: obscure && isObscured,
       keyboardType: keyboardType,
-      style: GoogleFonts.outfit(
-        color: Colors.white,
-        fontSize: 15,
-        fontWeight: FontWeight.w500,
-      ),
+      style: GoogleFonts.outfit(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w500),
       cursorColor: _accent,
       decoration: InputDecoration(
         labelText: label,
-        labelStyle: GoogleFonts.outfit(
-            color: Colors.white.withOpacity(0.5), fontSize: 14),
-        floatingLabelStyle: GoogleFonts.outfit(
-            color: _accent, fontSize: 14, fontWeight: FontWeight.w600),
-        prefixIcon: icon != null
-            ? Icon(icon, color: Colors.white.withOpacity(0.4), size: 20)
-            : null,
+        labelStyle: GoogleFonts.outfit(color: Colors.white.withOpacity(0.5), fontSize: 14),
+        floatingLabelStyle: GoogleFonts.outfit(color: _accent, fontSize: 14, fontWeight: FontWeight.w600),
+        prefixIcon: icon != null ? Icon(icon, color: Colors.white.withOpacity(0.4), size: 20) : null,
         suffixIcon: obscure
             ? IconButton(
           icon: Icon(
-            isObscured
-                ? Icons.visibility_off_rounded
-                : Icons.visibility_rounded,
+            isObscured ? Icons.visibility_off_rounded : Icons.visibility_rounded,
             color: Colors.white.withOpacity(0.4),
             size: 20,
           ),
@@ -370,8 +377,7 @@ class _LogINState extends State<LogIN> with TickerProviderStateMixin {
             : null,
         filled: true,
         fillColor: Colors.white.withOpacity(0.04),
-        contentPadding:
-        const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
           borderSide: BorderSide(color: Colors.white.withOpacity(0.12)),
@@ -413,24 +419,30 @@ class _LogINState extends State<LogIN> with TickerProviderStateMixin {
               shadowColor: Colors.transparent,
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(vertical: 17),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text(
-                  label,
-                  style: GoogleFonts.outfit(
-                    fontSize: 15.5,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.3,
+                if (_isLoading)
+                  const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                  )
+                else ...[
+                  Text(
+                    label,
+                    style: GoogleFonts.outfit(
+                      fontSize: 15.5,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.3,
+                    ),
                   ),
-                ),
-                if (icon != null) ...[
-                  const SizedBox(width: 8),
-                  Icon(icon, size: 19),
+                  if (icon != null) ...[
+                    const SizedBox(width: 8),
+                    Icon(icon, size: 19),
+                  ],
                 ],
               ],
             ),

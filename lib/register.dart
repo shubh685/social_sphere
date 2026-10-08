@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:socialee_sphere/login.dart';
+import 'Apis/api.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -10,9 +11,7 @@ class RegisterScreen extends StatefulWidget {
   State<RegisterScreen> createState() => _RegisterScreenState();
 }
 
-class _RegisterScreenState extends State<RegisterScreen>
-    with TickerProviderStateMixin {
-  /// 0 = Details, 1 = Verify (OTP), 2 = Password
+class _RegisterScreenState extends State<RegisterScreen> with TickerProviderStateMixin {
   int currentStep = 0;
   static const int _totalSteps = 3;
 
@@ -20,11 +19,12 @@ class _RegisterScreenState extends State<RegisterScreen>
   final _ownerNameController = TextEditingController();
   final _agencyEmailController = TextEditingController();
 
-  // Password (Step 3)
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
   bool _obscurePassword = true;
   bool _obscureConfirm = true;
+
+  bool _isLoading = false;
 
   final List<TextEditingController> _otpControllers =
   List.generate(4, (_) => TextEditingController());
@@ -36,6 +36,18 @@ class _RegisterScreenState extends State<RegisterScreen>
   late Animation<double> _glowAnimation;
 
   static const Color _accent = Color(0xFFA855F7);
+
+  String _buildDeviceTimestamp() {
+    final now = DateTime.now();
+    final y = now.year.toString().padLeft(4, '0');
+    final mo = now.month.toString().padLeft(2, '0');
+    final d = now.day.toString().padLeft(2, '0');
+    final h = now.hour.toString().padLeft(2, '0');
+    final mi = now.minute.toString().padLeft(2, '0');
+    final s = now.second.toString().padLeft(2, '0');
+
+    return "$y-$mo-$d $h:$mi:$s";
+  }
 
   @override
   void initState() {
@@ -55,8 +67,7 @@ class _RegisterScreenState extends State<RegisterScreen>
     );
 
     _glowAnimation = Tween<double>(begin: 0.3, end: 0.7).animate(
-      CurvedAnimation(
-          parent: _glowAnimationController, curve: Curves.easeInOut),
+      CurvedAnimation(parent: _glowAnimationController, curve: Curves.easeInOut),
     );
 
     for (int i = 0; i < 4; i++) {
@@ -84,72 +95,124 @@ class _RegisterScreenState extends State<RegisterScreen>
     super.dispose();
   }
 
-  /// Called when the final step is completed successfully. Routes the user
-  /// to the login page.
-  void _handleComplete() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Agency registered successfully! Please sign in.',
-          style: GoogleFonts.outfit(
-              color: Colors.white, fontWeight: FontWeight.w600),
-        ),
-        backgroundColor: const Color(0xFF00E5A0).withOpacity(0.95),
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 3),
-      ),
-    );
-
-    Navigator.push(context, MaterialPageRoute(builder: (context) => LogIN()));
-  }
-
-  /// Validates the current step's inputs. Returns true when it is safe to
-  /// advance.
-  bool _validateCurrentStep() {
-    if (currentStep == 0) {
-      if (_agencyNameController.text.trim().isEmpty ||
-          _ownerNameController.text.trim().isEmpty ||
-          _agencyEmailController.text.trim().isEmpty) {
-        _showError('Please fill in all agency details.');
-        return false;
-      }
-      if (!_agencyEmailController.text.contains('@')) {
-        _showError('Please enter a valid email address.');
-        return false;
-      }
-    } else if (currentStep == 1) {
-      final code = _otpControllers.map((c) => c.text.trim()).join();
-      if (code.length < 4) {
-        _showError('Please enter the 4-digit verification code.');
-        return false;
-      }
-    } else if (currentStep == 2) {
-      final pwd = _passwordController.text;
-      if (pwd.length < 6) {
-        _showError('Password must be at least 6 characters.');
-        return false;
-      }
-      if (pwd != _confirmPasswordController.text) {
-        _showError('Passwords do not match.');
-        return false;
-      }
-    }
-    return true;
-  }
-
-  void _showError(String msg) {
+  void _showSnackBar(String msg, {bool isError = true}) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
           msg,
           style: GoogleFonts.outfit(
-              color: Colors.white, fontWeight: FontWeight.w600),
+            color: Colors.white,
+            fontWeight: FontWeight.w600,
+          ),
         ),
-        backgroundColor: const Color(0xFFFF4757).withOpacity(0.95),
+        backgroundColor: isError ? const Color(0xFFFF4757) : const Color(0xFF00E5A0),
         behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 2),
       ),
     );
+  }
+
+  Future<void> _handleStepNext() async {
+    final email = _agencyEmailController.text.trim();
+
+    if (currentStep == 0) {
+      if (_agencyNameController.text.trim().isEmpty ||
+          _ownerNameController.text.trim().isEmpty ||
+          email.isEmpty ||
+          !email.contains('@')) {
+        _showSnackBar('Please fill in valid agency details.');
+        return;
+      }
+
+      setState(() => _isLoading = true);
+      final res = await ApiService.registerSendOtp(
+        agencyName: _agencyNameController.text.trim(),
+        ownerName: _ownerNameController.text.trim(),
+        email: email,
+        purpose: "REGISTRATION_STEP_1",
+        deviceTimestamp: _buildDeviceTimestamp(),
+      );
+      setState(() => _isLoading = false);
+
+      if (res['status'] == true) {
+        _showSnackBar('OTP sent to $email', isError: false);
+        setState(() => currentStep = 1);
+      } else {
+        _showSnackBar(res['message'] ?? 'Failed to send OTP');
+      }
+    } else if (currentStep == 1) {
+      final code = _otpControllers.map((c) => c.text.trim()).join();
+      if (code.length < 4) {
+        _showSnackBar('Please enter the 4-digit OTP code.');
+        return;
+      }
+
+      setState(() => _isLoading = true);
+      final res = await ApiService.registerVerifyOtp(
+        email: email,
+        otp: code,
+        purpose: "REGISTRATION_STEP_1",
+        deviceTimestamp: _buildDeviceTimestamp(),
+      );
+      setState(() => _isLoading = false);
+
+      if (res['status'] == true) {
+        _showSnackBar('Email verified successfully!', isError: false);
+        setState(() => currentStep = 2);
+      } else {
+        _showSnackBar(res['message'] ?? 'Invalid OTP code.');
+      }
+    } else if (currentStep == 2) {
+      final pwd = _passwordController.text;
+      if (pwd.length < 6) {
+        _showSnackBar('Password must be at least 6 characters.');
+        return;
+      }
+      if (pwd != _confirmPasswordController.text) {
+        _showSnackBar('Passwords do not match.');
+        return;
+      }
+
+      setState(() => _isLoading = true);
+      final res = await ApiService.registerComplete(
+        email: email,
+        password: pwd,
+        deviceTimestamp: _buildDeviceTimestamp(),
+      );
+      setState(() => _isLoading = false);
+
+      if (res['status'] == true) {
+        _showSnackBar('Agency registered successfully!', isError: false);
+        if (mounted) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => const LogIN()),
+          );
+        }
+      } else {
+        _showSnackBar(res['message'] ?? 'Failed to set password.');
+      }
+    }
+  }
+
+  Future<void> _resendOtp() async {
+    final email = _agencyEmailController.text.trim();
+    if (email.isEmpty) return;
+
+    setState(() => _isLoading = true);
+    final res = await ApiService.registerSendOtp(
+      agencyName: _agencyNameController.text.trim(),
+      ownerName: _ownerNameController.text.trim(),
+      email: email,
+      purpose: "REGISTRATION_STEP_1",
+      deviceTimestamp: _buildDeviceTimestamp(),
+    );
+    setState(() => _isLoading = false);
+
+    if (res['status'] == true) {
+      _showSnackBar('New OTP code sent!', isError: false);
+    } else {
+      _showSnackBar(res['message'] ?? 'Unable to resend OTP.');
+    }
   }
 
   @override
@@ -159,10 +222,8 @@ class _RegisterScreenState extends State<RegisterScreen>
     final isTablet = size.width > 600 && size.width <= 1024;
     final isMobile = size.width <= 600;
 
-    final cardWidth =
-    isDesktop ? 480.0 : isTablet ? size.width * 0.65 : size.width * 0.92;
-    final horizontalPadding =
-    isDesktop ? 40.0 : isTablet ? 32.0 : 22.0;
+    final cardWidth = isDesktop ? 480.0 : isTablet ? size.width * 0.65 : size.width * 0.92;
+    final horizontalPadding = isDesktop ? 40.0 : isTablet ? 32.0 : 22.0;
 
     return AnimatedBuilder(
       animation: _bgAnimation,
@@ -171,12 +232,9 @@ class _RegisterScreenState extends State<RegisterScreen>
           decoration: BoxDecoration(
             gradient: LinearGradient(
               colors: [
-                Color.lerp(const Color(0xFF0A0E27), const Color(0xFF1A0B2E),
-                    _bgAnimation.value)!,
-                Color.lerp(const Color(0xFF1E1B4B), const Color(0xFF2D1B69),
-                    _bgAnimation.value)!,
-                Color.lerp(const Color(0xFF311042), const Color(0xFF0F172A),
-                    _bgAnimation.value)!,
+                Color.lerp(const Color(0xFF0A0E27), const Color(0xFF1A0B2E), _bgAnimation.value)!,
+                Color.lerp(const Color(0xFF1E1B4B), const Color(0xFF2D1B69), _bgAnimation.value)!,
+                Color.lerp(const Color(0xFF311042), const Color(0xFF0F172A), _bgAnimation.value)!,
               ],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
@@ -189,8 +247,7 @@ class _RegisterScreenState extends State<RegisterScreen>
               backgroundColor: Colors.transparent,
               elevation: 0,
               leading: IconButton(
-                icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                    color: Colors.white),
+                icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white),
                 onPressed: () {
                   if (currentStep > 0) {
                     setState(() => currentStep--);
@@ -216,8 +273,7 @@ class _RegisterScreenState extends State<RegisterScreen>
                       padding: EdgeInsets.all(horizontalPadding),
                       decoration: BoxDecoration(
                         color: const Color(0xFF0B0F1E).withOpacity(0.88),
-                        borderRadius:
-                        BorderRadius.circular(isMobile ? 22 : 28),
+                        borderRadius: BorderRadius.circular(isMobile ? 22 : 28),
                         border: Border.all(
                           color: _accent.withOpacity(0.35),
                           width: 1.5,
@@ -237,8 +293,6 @@ class _RegisterScreenState extends State<RegisterScreen>
                         children: [
                           _buildHeader(isMobile),
                           SizedBox(height: isMobile ? 20 : 28),
-
-                          // ── Stepper (3 steps)
                           Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
@@ -250,7 +304,6 @@ class _RegisterScreenState extends State<RegisterScreen>
                             ],
                           ),
                           const SizedBox(height: 26),
-
                           AnimatedSwitcher(
                             duration: const Duration(milliseconds: 350),
                             transitionBuilder: (child, animation) {
@@ -291,16 +344,12 @@ class _RegisterScreenState extends State<RegisterScreen>
             Positioned(
               top: -size.height * 0.1 + (_bgAnimation.value * 40),
               right: -size.width * 0.1,
-              child: _glowOrb(
-                  size: size.width * 0.45,
-                  color: _accent.withOpacity(0.12)),
+              child: _glowOrb(size: size.width * 0.45, color: _accent.withOpacity(0.12)),
             ),
             Positioned(
               bottom: -size.height * 0.15 - (_bgAnimation.value * 30),
               left: -size.width * 0.1,
-              child: _glowOrb(
-                  size: size.width * 0.5,
-                  color: const Color(0xFF00F0FF).withOpacity(0.1)),
+              child: _glowOrb(size: size.width * 0.5, color: const Color(0xFF00F0FF).withOpacity(0.1)),
             ),
           ],
         );
@@ -343,7 +392,7 @@ class _RegisterScreenState extends State<RegisterScreen>
             ),
             const SizedBox(width: 12),
             Text(
-              "Agency Onboarding",
+              "Agency Sign UP",
               style: GoogleFonts.outfit(
                 fontSize: isMobile ? 24 : 28,
                 fontWeight: FontWeight.w700,
@@ -367,7 +416,6 @@ class _RegisterScreenState extends State<RegisterScreen>
   }
 
   Widget _buildStepContent() {
-    // ── Step 1: Agency info
     if (currentStep == 0) {
       return Column(
         key: const ValueKey('regStep0'),
@@ -397,7 +445,6 @@ class _RegisterScreenState extends State<RegisterScreen>
       );
     }
 
-    // ── Step 2: Verify email (OTP)
     if (currentStep == 1) {
       return Column(
         key: const ValueKey('regStep1'),
@@ -423,7 +470,7 @@ class _RegisterScreenState extends State<RegisterScreen>
           const SizedBox(height: 16),
           Center(
             child: TextButton(
-              onPressed: () {},
+              onPressed: _resendOtp,
               child: Text(
                 "Resend Code",
                 style: GoogleFonts.outfit(
@@ -438,7 +485,6 @@ class _RegisterScreenState extends State<RegisterScreen>
       );
     }
 
-    // ── Step 3: Password (after email verification)
     return Column(
       key: const ValueKey('regStep2'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -455,30 +501,23 @@ class _RegisterScreenState extends State<RegisterScreen>
           ),
         ),
         const SizedBox(height: 20),
-
-        // Password
         _buildPasswordField(
           label: "Password",
           controller: _passwordController,
           obscure: _obscurePassword,
-          onToggle: () =>
-              setState(() => _obscurePassword = !_obscurePassword),
+          onToggle: () => setState(() => _obscurePassword = !_obscurePassword),
         ),
         const SizedBox(height: 16),
-
-        // Confirm Password
         _buildPasswordField(
           label: "Confirm Password",
           controller: _confirmPasswordController,
           obscure: _obscureConfirm,
           onToggle: () => setState(() => _obscureConfirm = !_obscureConfirm),
         ),
-
         const SizedBox(height: 12),
         Row(
           children: [
-            Icon(Icons.info_outline_rounded,
-                size: 14, color: Colors.white.withOpacity(0.45)),
+            Icon(Icons.info_outline_rounded, size: 14, color: Colors.white.withOpacity(0.45)),
             const SizedBox(width: 6),
             Expanded(
               child: Text(
@@ -510,19 +549,13 @@ class _RegisterScreenState extends State<RegisterScreen>
         Expanded(
           flex: currentStep > 0 ? 2 : 1,
           child: _buildPrimaryButton(
-            label: isLast ? "Create Account" : "Next Step",
-            onPressed: () {
-              if (!_validateCurrentStep()) return;
-
-              if (currentStep < _totalSteps - 1) {
-                setState(() => currentStep++);
-              } else {
-                _handleComplete();
-              }
-            },
-            icon: isLast
-                ? Icons.check_circle_rounded
-                : Icons.arrow_forward_rounded,
+            label: _isLoading
+                ? "Processing..."
+                : isLast
+                ? "Create Account"
+                : "Next Step",
+            onPressed: _isLoading ? () {} : _handleStepNext,
+            icon: isLast ? Icons.check_circle_rounded : Icons.arrow_forward_rounded,
           ),
         ),
       ],
@@ -552,9 +585,7 @@ class _RegisterScreenState extends State<RegisterScreen>
                   borderRadius: BorderRadius.circular(14),
                   color: Colors.white.withOpacity(0.05),
                   border: Border.all(
-                    color: focusNodes[i].hasFocus
-                        ? _accent
-                        : Colors.white.withOpacity(0.15),
+                    color: focusNodes[i].hasFocus ? _accent : Colors.white.withOpacity(0.15),
                     width: focusNodes[i].hasFocus ? 2.0 : 1.2,
                   ),
                   boxShadow: focusNodes[i].hasFocus
@@ -574,9 +605,7 @@ class _RegisterScreenState extends State<RegisterScreen>
                     textAlign: TextAlign.center,
                     keyboardType: TextInputType.number,
                     maxLength: 1,
-                    inputFormatters: [
-                      FilteringTextInputFormatter.digitsOnly,
-                    ],
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                     style: GoogleFonts.outfit(
                       fontSize: size * 0.42,
                       fontWeight: FontWeight.w700,
@@ -615,25 +644,16 @@ class _RegisterScreenState extends State<RegisterScreen>
     return TextField(
       controller: controller,
       keyboardType: keyboardType,
-      style: GoogleFonts.outfit(
-        color: Colors.white,
-        fontSize: 15,
-        fontWeight: FontWeight.w500,
-      ),
+      style: GoogleFonts.outfit(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w500),
       cursorColor: _accent,
       decoration: InputDecoration(
         labelText: label,
-        labelStyle: GoogleFonts.outfit(
-            color: Colors.white.withOpacity(0.5), fontSize: 14),
-        floatingLabelStyle: GoogleFonts.outfit(
-            color: _accent, fontSize: 14, fontWeight: FontWeight.w600),
-        prefixIcon: icon != null
-            ? Icon(icon, color: Colors.white.withOpacity(0.4), size: 20)
-            : null,
+        labelStyle: GoogleFonts.outfit(color: Colors.white.withOpacity(0.5), fontSize: 14),
+        floatingLabelStyle: GoogleFonts.outfit(color: _accent, fontSize: 14, fontWeight: FontWeight.w600),
+        prefixIcon: icon != null ? Icon(icon, color: Colors.white.withOpacity(0.4), size: 20) : null,
         filled: true,
         fillColor: Colors.white.withOpacity(0.04),
-        contentPadding:
-        const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
           borderSide: BorderSide(color: Colors.white.withOpacity(0.12)),
@@ -646,7 +666,6 @@ class _RegisterScreenState extends State<RegisterScreen>
     );
   }
 
-  /// Password-styled text field with a visibility toggle.
   Widget _buildPasswordField({
     required String label,
     required TextEditingController controller,
@@ -656,20 +675,13 @@ class _RegisterScreenState extends State<RegisterScreen>
     return TextField(
       controller: controller,
       obscureText: obscure,
-      style: GoogleFonts.outfit(
-        color: Colors.white,
-        fontSize: 15,
-        fontWeight: FontWeight.w500,
-      ),
+      style: GoogleFonts.outfit(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w500),
       cursorColor: _accent,
       decoration: InputDecoration(
         labelText: label,
-        labelStyle: GoogleFonts.outfit(
-            color: Colors.white.withOpacity(0.5), fontSize: 14),
-        floatingLabelStyle: GoogleFonts.outfit(
-            color: _accent, fontSize: 14, fontWeight: FontWeight.w600),
-        prefixIcon: Icon(Icons.lock_outline_rounded,
-            color: Colors.white.withOpacity(0.4), size: 20),
+        labelStyle: GoogleFonts.outfit(color: Colors.white.withOpacity(0.5), fontSize: 14),
+        floatingLabelStyle: GoogleFonts.outfit(color: _accent, fontSize: 14, fontWeight: FontWeight.w600),
+        prefixIcon: Icon(Icons.lock_outline_rounded, color: Colors.white.withOpacity(0.4), size: 20),
         suffixIcon: IconButton(
           onPressed: onToggle,
           icon: Icon(
@@ -680,8 +692,7 @@ class _RegisterScreenState extends State<RegisterScreen>
         ),
         filled: true,
         fillColor: Colors.white.withOpacity(0.04),
-        contentPadding:
-        const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
           borderSide: BorderSide(color: Colors.white.withOpacity(0.12)),
@@ -723,24 +734,30 @@ class _RegisterScreenState extends State<RegisterScreen>
               shadowColor: Colors.transparent,
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(vertical: 17),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text(
-                  label,
-                  style: GoogleFonts.outfit(
-                    fontSize: 15.5,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.3,
+                if (_isLoading)
+                  const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                  )
+                else ...[
+                  Text(
+                    label,
+                    style: GoogleFonts.outfit(
+                      fontSize: 15.5,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.3,
+                    ),
                   ),
-                ),
-                if (icon != null) ...[
-                  const SizedBox(width: 8),
-                  Icon(icon, size: 19),
+                  if (icon != null) ...[
+                    const SizedBox(width: 8),
+                    Icon(icon, size: 19),
+                  ],
                 ],
               ],
             ),
@@ -759,17 +776,11 @@ class _RegisterScreenState extends State<RegisterScreen>
       style: OutlinedButton.styleFrom(
         side: BorderSide(color: Colors.white.withOpacity(0.2)),
         padding: const EdgeInsets.symmetric(vertical: 17),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(14),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       ),
       child: Text(
         label,
-        style: GoogleFonts.outfit(
-          color: Colors.white,
-          fontWeight: FontWeight.w600,
-          fontSize: 15,
-        ),
+        style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 15),
       ),
     );
   }
@@ -797,34 +808,19 @@ class _RegisterScreenState extends State<RegisterScreen>
           height: 32,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            gradient: isActive
-                ? const LinearGradient(
-              colors: [Color(0xFFA855F7), Color(0xFF00F0FF)],
-            )
-                : null,
+            gradient: isActive ? const LinearGradient(colors: [Color(0xFFA855F7), Color(0xFF00F0FF)]) : null,
             color: isActive ? null : Colors.transparent,
             border: Border.all(
-              color: isActive
-                  ? Colors.transparent
-                  : Colors.white.withOpacity(0.25),
+              color: isActive ? Colors.transparent : Colors.white.withOpacity(0.25),
               width: 1.5,
             ),
-            boxShadow: isActive
-                ? [
-              BoxShadow(
-                color: _accent.withOpacity(0.4),
-                blurRadius: 12,
-              ),
-            ]
-                : null,
+            boxShadow: isActive ? [BoxShadow(color: _accent.withOpacity(0.4), blurRadius: 12)] : null,
           ),
           child: Center(
             child: Text(
               "$stepNum",
               style: GoogleFonts.outfit(
-                color: isActive
-                    ? Colors.white
-                    : Colors.white.withOpacity(0.4),
+                color: isActive ? Colors.white : Colors.white.withOpacity(0.4),
                 fontWeight: FontWeight.w700,
                 fontSize: 13,
               ),
@@ -837,9 +833,7 @@ class _RegisterScreenState extends State<RegisterScreen>
           style: GoogleFonts.outfit(
             fontSize: 10,
             fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
-            color: isActive
-                ? Colors.white
-                : Colors.white.withOpacity(0.35),
+            color: isActive ? Colors.white : Colors.white.withOpacity(0.35),
           ),
         ),
       ],
@@ -854,11 +848,7 @@ class _RegisterScreenState extends State<RegisterScreen>
       margin: const EdgeInsets.only(bottom: 18, left: 4, right: 4),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(2),
-        gradient: isActive
-            ? const LinearGradient(
-          colors: [Color(0xFFA855F7), Color(0xFF00F0FF)],
-        )
-            : null,
+        gradient: isActive ? const LinearGradient(colors: [Color(0xFFA855F7), Color(0xFF00F0FF)]) : null,
         color: isActive ? null : Colors.white.withOpacity(0.12),
       ),
     );
