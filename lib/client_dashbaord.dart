@@ -1,8 +1,13 @@
 // client_dashboard.dart
+import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:intl/intl.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 import 'analytics_dashboard.dart';
 import 'dashboard_shared.dart';
 
@@ -31,8 +36,6 @@ class ClientDashboard extends StatefulWidget {
 
 class _ClientDashboardState extends State<ClientDashboard>
     with TickerProviderStateMixin {
-  /// 0 = Overview, 1 = Content, 2 = Social, 3 = Calendar, 4 = Queue,
-  /// 5 = Published, 6 = Failed, 7 = Analytics
   int _tabIndex = 0;
 
   late final List<_ClientTab> _tabs = [
@@ -51,23 +54,29 @@ class _ClientDashboardState extends State<ClientDashboard>
 
   final List<ScheduledPost> _localScheduled = [];
 
-  // ── Date range for analytics
+  /// Live engagement data per post ID (simulated API)
+  final Map<String, LiveEngagement> _liveEngagement = {};
+  Timer? _liveUpdateTimer;
+
+  /// Tracks which posts are expanded in calendar view
+  final Set<String> _expandedPosts = {};
+
   DateRangeSelection _analyticsRange = DateRangeSelection(
     startDate: DateTime.now().subtract(const Duration(days: 30)),
     endDate: DateTime.now(),
     label: 'Last 30 Days',
   );
 
-  // ── Calendar state
   DateTime _calendarMonth = DateTime.now();
   DateTime _selectedDate = DateTime.now();
 
-  // ── Calendar filter state
   String _calendarViewMode = 'Monthly';
   String? _calendarPlatformFilter;
+  String? _calendarStatusFilter;
   final Set<String> _calendarTypeFilters = {};
 
   bool _showSocialForm = false;
+  bool _isExporting = false;
 
   @override
   void initState() {
@@ -81,10 +90,53 @@ class _ClientDashboardState extends State<ClientDashboard>
     _bgAnimation = Tween<double>(begin: 0, end: 1).animate(
       CurvedAnimation(parent: _bgAnimationController, curve: Curves.easeInOut),
     );
+
+    _initializeLiveEngagement();
+    _startLiveUpdates();
   }
+
+  void _initializeLiveEngagement() {
+    for (final post in _localScheduled) {
+      final id = _postId(post);
+      _liveEngagement[id] = LiveEngagement(
+        likes: _randomBase(post.title.hashCode + 1),
+        comments: _randomBase(post.title.hashCode + 2) ~/ 8,
+        shares: _randomBase(post.title.hashCode + 3) ~/ 12,
+        lastUpdated: DateTime.now(),
+      );
+    }
+  }
+
+  int _randomBase(int seed) {
+    final n = (seed.abs() * 9301 + 49297) % 233280;
+    return (n % 900) + 120;
+  }
+
+  void _startLiveUpdates() {
+    _liveUpdateTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+      if (!mounted) return;
+      _simulateApiFetch();
+    });
+  }
+
+  void _simulateApiFetch() {
+    setState(() {
+      for (final post in _localScheduled) {
+        final id = _postId(post);
+        final cur = _liveEngagement[id];
+        if (cur == null) continue;
+        if (post.status != PostStatus.live) continue;
+        _liveEngagement[id] = cur.increment();
+      }
+    });
+  }
+
+  String _postId(ScheduledPost p) =>
+      '${p.title}_${p.clientName}_${p.scheduledAt.millisecondsSinceEpoch}';
 
   @override
   void dispose() {
+    _liveUpdateTimer?.cancel();
     _bgAnimationController.dispose();
     super.dispose();
   }
@@ -114,7 +166,6 @@ class _ClientDashboardState extends State<ClientDashboard>
     );
   }
 
-  // ── HEADER: Back + Client identity + mini stats
   Widget _buildClientTopBar(bool isMobile) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
@@ -227,8 +278,8 @@ class _ClientDashboardState extends State<ClientDashboard>
                 ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.purple,
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 14, vertical: 10),
+                  padding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10),
                   ),
@@ -241,7 +292,6 @@ class _ClientDashboardState extends State<ClientDashboard>
     );
   }
 
-  // ── TAB ROW
   Widget _buildTabsRow(bool isMobile) {
     return SizedBox(
       height: 44,
@@ -260,13 +310,12 @@ class _ClientDashboardState extends State<ClientDashboard>
               borderRadius: BorderRadius.circular(10),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 180),
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 12, vertical: 8),
+                padding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(10),
-                  color: isSelected
-                      ? t.color.withOpacity(0.14)
-                      : Colors.white,
+                  color:
+                  isSelected ? t.color.withOpacity(0.14) : Colors.white,
                   border: Border.all(
                     color: isSelected
                         ? t.color.withOpacity(0.55)
@@ -289,20 +338,19 @@ class _ClientDashboardState extends State<ClientDashboard>
                     Icon(
                       t.icon,
                       size: 14,
-                      color: isSelected
-                          ? t.color
-                          : AppColors.textDarkMuted,
+                      color:
+                      isSelected ? t.color : AppColors.textDarkMuted,
                     ),
                     const SizedBox(width: 6),
                     Text(
                       t.label,
                       style: GoogleFonts.outfit(
                         fontSize: 12,
-                        fontWeight:
-                        isSelected ? FontWeight.w700 : FontWeight.w500,
-                        color: isSelected
-                            ? t.color
-                            : AppColors.textDarkSoft,
+                        fontWeight: isSelected
+                            ? FontWeight.w700
+                            : FontWeight.w500,
+                        color:
+                        isSelected ? t.color : AppColors.textDarkSoft,
                       ),
                     ),
                   ],
@@ -315,17 +363,24 @@ class _ClientDashboardState extends State<ClientDashboard>
     );
   }
 
-  // ── TAB CONTENT ROUTER
   Widget _buildTabContent() {
     switch (_tabIndex) {
       case 0:
         return _buildOverviewTab();
       case 1:
-        return CreateContentForm(
+        return ClientCreateContentForm(
           clients: [_client],
           lockedClient: _client,
           onSave: (post) {
-            setState(() => _localScheduled.add(post));
+            setState(() {
+              _localScheduled.add(post);
+              _liveEngagement[_postId(post)] = LiveEngagement(
+                likes: 0,
+                comments: 0,
+                shares: 0,
+                lastUpdated: DateTime.now(),
+              );
+            });
             widget.onScheduleNew?.call(post);
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
@@ -338,7 +393,7 @@ class _ClientDashboardState extends State<ClientDashboard>
                 behavior: SnackBarBehavior.floating,
               ),
             );
-            setState(() => _tabIndex = 4); // Queue
+            setState(() => _tabIndex = 4);
           },
           onCancel: () => setState(() => _tabIndex = 0),
         );
@@ -347,10 +402,7 @@ class _ClientDashboardState extends State<ClientDashboard>
       case 3:
         return _buildCalendarTab();
       case 4:
-        return PublishingSections.buildPublishingQueue(
-          _localScheduled,
-          filterClientName: _client.companyName,
-        );
+        return _buildEnhancedQueue();
       case 5:
         return PublishingSections.buildPublishedSection(
           widget.publishedPosts,
@@ -362,18 +414,407 @@ class _ClientDashboardState extends State<ClientDashboard>
           filterClientName: _client.companyName,
         );
       case 7:
-        return PublishingSections.buildAnalyticsSection(
-          widget.publishedPosts,
-          filterClientName: _client.companyName,
-          dateRange: _analyticsRange,
-          onDateRangeTap: _showAnalyticsDateRangePicker,
-        );
+        return _buildAnalyticsWithExport();
       default:
         return _buildOverviewTab();
     }
   }
 
-  // ── SOCIAL TAB
+  // ═════════════════════════════════════════════════════════════════════════
+  // EXPANDABLE POST CARD (used in Queue, Calendar, Overview)
+  // ═════════════════════════════════════════════════════════════════════════
+  Widget _buildLivePostCard(ScheduledPost post) {
+    final id = _postId(post);
+    final live = _liveEngagement[id] ??
+        LiveEngagement(
+            likes: 0, comments: 0, shares: 0, lastUpdated: DateTime.now());
+
+    final statusColor = _statusColor(post.status);
+    final statusLabel = _statusLabel(post.status);
+    final isExpanded = _expandedPosts.contains(id);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: post.color.withOpacity(0.35)),
+        boxShadow: [
+          BoxShadow(
+            color: post.color.withOpacity(0.08),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── Header (always visible)
+          Padding(
+            padding: const EdgeInsets.all(14),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(11),
+                    color: post.color.withOpacity(0.15),
+                    border: Border.all(color: post.color.withOpacity(0.4)),
+                  ),
+                  child: Icon(_platformIcon(post.platform),
+                      color: post.color, size: 20),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        post.title,
+                        style: GoogleFonts.outfit(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textDark,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '${post.platform} • ${post.type}',
+                        style: GoogleFonts.outfit(
+                          fontSize: 11,
+                          color: AppColors.textDarkMuted,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                _buildStatusPill(statusLabel, statusColor),
+                const SizedBox(width: 6),
+                // ── Expand / Collapse chevron
+                Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: () {
+                      setState(() {
+                        if (isExpanded) {
+                          _expandedPosts.remove(id);
+                        } else {
+                          _expandedPosts.add(id);
+                        }
+                      });
+                    },
+                    borderRadius: BorderRadius.circular(50),
+                    child: Container(
+                      width: 28,
+                      height: 28,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: AppColors.scaffoldLight,
+                        border: Border.all(
+                          color: isExpanded
+                              ? post.color.withOpacity(0.6)
+                              : AppColors.borderLight,
+                        ),
+                      ),
+                      child: AnimatedRotation(
+                        duration: const Duration(milliseconds: 200),
+                        turns: isExpanded ? 0.5 : 0,
+                        child: Icon(
+                          Icons.keyboard_arrow_down_rounded,
+                          size: 18,
+                          color: isExpanded
+                              ? post.color
+                              : AppColors.textDarkMuted,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // ── Expandable body
+          AnimatedCrossFade(
+            firstChild: const SizedBox(width: double.infinity),
+            secondChild: Padding(
+              padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (post.caption.isNotEmpty)
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: AppColors.scaffoldLight,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        post.caption,
+                        style: GoogleFonts.outfit(
+                          fontSize: 11.5,
+                          color: AppColors.textDarkSoft,
+                          height: 1.4,
+                        ),
+                      ),
+                    ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      const Icon(Icons.schedule_rounded,
+                          size: 13, color: AppColors.textDarkMuted),
+                      const SizedBox(width: 4),
+                      Text(
+                        DateFormat('dd MMM • HH:mm').format(post.scheduledAt),
+                        style: GoogleFonts.outfit(
+                            fontSize: 11, color: AppColors.textDarkMuted),
+                      ),
+                      const Spacer(),
+                      const Icon(Icons.person_outline_rounded,
+                          size: 13, color: AppColors.textDarkMuted),
+                      const SizedBox(width: 4),
+                      Text(
+                        post.ownerName,
+                        style: GoogleFonts.outfit(
+                            fontSize: 11, color: AppColors.textDarkMuted),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  const Divider(height: 1, color: AppColors.borderLight),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _LiveCounter(
+                          icon: Icons.favorite_rounded,
+                          label: 'Likes',
+                          value: live.likes,
+                          color: AppColors.pink,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _LiveCounter(
+                          icon: Icons.chat_bubble_rounded,
+                          label: 'Comments',
+                          value: live.comments,
+                          color: AppColors.cyan,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _LiveCounter(
+                          icon: Icons.share_rounded,
+                          label: 'Shares',
+                          value: live.shares,
+                          color: AppColors.green,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      const Icon(Icons.sync_rounded,
+                          size: 11, color: AppColors.textDarkMuted),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Updated ${_timeAgo(live.lastUpdated)}',
+                        style: GoogleFonts.outfit(
+                            fontSize: 9.5, color: AppColors.textDarkMuted),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            crossFadeState: isExpanded
+                ? CrossFadeState.showSecond
+                : CrossFadeState.showFirst,
+            duration: const Duration(milliseconds: 220),
+            sizeCurve: Curves.easeOutCubic,
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ═════════════════════════════════════════════════════════════════════════
+  // ENHANCED QUEUE
+  // ═════════════════════════════════════════════════════════════════════════
+  Widget _buildEnhancedQueue() {
+    final scoped = _localScheduled
+        .where((p) => p.clientName == _client.companyName)
+        .toList()
+      ..sort((a, b) => a.scheduledAt.compareTo(b.scheduledAt));
+
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: buildSectionTitle('Publishing Queue (${scoped.length})'),
+              ),
+              Container(
+                padding:
+                const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(50),
+                  color: AppColors.green.withOpacity(0.12),
+                  border:
+                  Border.all(color: AppColors.green.withOpacity(0.4)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 6,
+                      height: 6,
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: AppColors.green,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Live tracking',
+                      style: GoogleFonts.outfit(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.green,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Real-time engagement metrics update automatically. Tap chevron to expand.',
+            style: GoogleFonts.outfit(
+                fontSize: 11.5, color: AppColors.textDarkMuted),
+          ),
+          const SizedBox(height: 14),
+          if (scoped.isEmpty)
+            buildEmptyState(
+              icon: Icons.queue_rounded,
+              title: 'Queue is empty',
+              subtitle: 'Scheduled posts will appear here.',
+            )
+          else
+            ...scoped.map((post) => _buildLivePostCard(post)),
+        ],
+      ),
+    );
+  }
+
+  Color _statusColor(PostStatus s) {
+    switch (s) {
+      case PostStatus.draft:
+        return AppColors.textDarkMuted;
+      case PostStatus.pendingApproval:
+        return AppColors.amber;
+      case PostStatus.scheduled:
+        return AppColors.cyan;
+      case PostStatus.live:
+        return AppColors.green;
+      case PostStatus.failed:
+        return AppColors.red;
+    }
+  }
+
+  String _statusLabel(PostStatus s) {
+    switch (s) {
+      case PostStatus.draft:
+        return 'Draft';
+      case PostStatus.pendingApproval:
+        return 'Approval';
+      case PostStatus.scheduled:
+        return 'Scheduled';
+      case PostStatus.live:
+        return 'Live';
+      case PostStatus.failed:
+        return 'Failed';
+    }
+  }
+
+  Widget _buildStatusPill(String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(50),
+        color: color.withOpacity(0.14),
+        border: Border.all(color: color.withOpacity(0.45)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (label == 'Live')
+            Container(
+              width: 5,
+              height: 5,
+              margin: const EdgeInsets.only(right: 4),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: color,
+                boxShadow: [
+                  BoxShadow(color: color.withOpacity(0.7), blurRadius: 4),
+                ],
+              ),
+            ),
+          Text(
+            label,
+            style: GoogleFonts.outfit(
+              fontSize: 10,
+              fontWeight: FontWeight.w800,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  IconData _platformIcon(String platform) {
+    switch (platform) {
+      case 'Facebook':
+        return Icons.facebook_rounded;
+      case 'Instagram':
+        return Icons.camera_alt_rounded;
+      case 'Threads':
+        return Icons.alternate_email_rounded;
+      case 'YouTube':
+        return Icons.play_circle_fill_rounded;
+      case 'LinkedIn':
+        return Icons.business_center_rounded;
+      default:
+        return Icons.share_rounded;
+    }
+  }
+
+  String _timeAgo(DateTime t) {
+    final diff = DateTime.now().difference(t);
+    if (diff.inSeconds < 10) return 'just now';
+    if (diff.inSeconds < 60) return '${diff.inSeconds}s ago';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    return '${diff.inHours}h ago';
+  }
+
+  // ═════════════════════════════════════════════════════════════════════════
+  // SOCIAL TAB
+  // ═════════════════════════════════════════════════════════════════════════
   Widget _buildSocialTab() {
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
@@ -390,7 +831,27 @@ class _ClientDashboardState extends State<ClientDashboard>
           ),
           const SizedBox(height: 16),
           if (_showSocialForm)
-            _buildInlineSocialForm()
+            SocialHandlesForm(
+              client: _client,
+              onSave: (updated) {
+                setState(() {
+                  _client = updated;
+                  _showSocialForm = false;
+                });
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      'Social handles saved for ${updated.companyName}',
+                      style: GoogleFonts.outfit(
+                          color: Colors.white, fontWeight: FontWeight.w600),
+                    ),
+                    backgroundColor: AppColors.green.withOpacity(0.9),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              },
+              onCancel: () => setState(() => _showSocialForm = false),
+            )
           else
             _socialOptionCard(
               title: 'Add Handles',
@@ -413,30 +874,6 @@ class _ClientDashboardState extends State<ClientDashboard>
           _buildConnectedPlatformsListView(),
         ],
       ),
-    );
-  }
-
-  Widget _buildInlineSocialForm() {
-    return SocialHandlesForm(
-      client: _client,
-      onSave: (updated) {
-        setState(() {
-          _client = updated;
-          _showSocialForm = false;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Social handles saved for ${updated.companyName}',
-              style: GoogleFonts.outfit(
-                  color: Colors.white, fontWeight: FontWeight.w600),
-            ),
-            backgroundColor: AppColors.green.withOpacity(0.9),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      },
-      onCancel: () => setState(() => _showSocialForm = false),
     );
   }
 
@@ -615,16 +1052,13 @@ class _ClientDashboardState extends State<ClientDashboard>
             ),
           ),
           Container(
-            padding:
-            const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(50),
-              color:
-              (e.metaConnected ? AppColors.green : AppColors.amber)
+              color: (e.metaConnected ? AppColors.green : AppColors.amber)
                   .withOpacity(0.15),
               border: Border.all(
-                color:
-                (e.metaConnected ? AppColors.green : AppColors.amber)
+                color: (e.metaConnected ? AppColors.green : AppColors.amber)
                     .withOpacity(0.4),
               ),
             ),
@@ -636,9 +1070,8 @@ class _ClientDashboardState extends State<ClientDashboard>
                       ? Icons.verified_rounded
                       : Icons.warning_amber_rounded,
                   size: 11,
-                  color: e.metaConnected
-                      ? AppColors.green
-                      : AppColors.amber,
+                  color:
+                  e.metaConnected ? AppColors.green : AppColors.amber,
                 ),
                 const SizedBox(width: 4),
                 Text(
@@ -646,9 +1079,8 @@ class _ClientDashboardState extends State<ClientDashboard>
                   style: GoogleFonts.outfit(
                     fontSize: 10,
                     fontWeight: FontWeight.w700,
-                    color: e.metaConnected
-                        ? AppColors.green
-                        : AppColors.amber,
+                    color:
+                    e.metaConnected ? AppColors.green : AppColors.amber,
                   ),
                 ),
               ],
@@ -659,12 +1091,25 @@ class _ClientDashboardState extends State<ClientDashboard>
     );
   }
 
-  // ── OVERVIEW TAB
+  // ═════════════════════════════════════════════════════════════════════════
+  // OVERVIEW TAB
+  // ═════════════════════════════════════════════════════════════════════════
   Widget _buildOverviewTab() {
     final totalEngagement = widget.publishedPosts.fold<int>(
       0,
           (s, p) => s + p.likes + p.comments + p.shares,
     );
+
+    final draftCount =
+        _localScheduled.where((p) => p.status == PostStatus.draft).length;
+    final approvalCount = _localScheduled
+        .where((p) => p.status == PostStatus.pendingApproval)
+        .length;
+    final scheduledCount = _localScheduled
+        .where((p) => p.status == PostStatus.scheduled)
+        .length;
+    final liveCount =
+        _localScheduled.where((p) => p.status == PostStatus.live).length;
 
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
@@ -672,19 +1117,53 @@ class _ClientDashboardState extends State<ClientDashboard>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          buildSectionTitle('Snapshot'),
+          buildSectionTitle('Workflow Snapshot'),
           const SizedBox(height: 12),
           LayoutBuilder(
             builder: (context, c) {
               final narrow = c.maxWidth < 600;
               final tiles = [
-                _snapTile('Scheduled', '${_localScheduled.length}',
+                _snapTile('Drafts', '$draftCount', Icons.edit_note_rounded,
+                    AppColors.textDarkMuted),
+                _snapTile('Approvals', '$approvalCount',
+                    Icons.how_to_reg_rounded, AppColors.amber),
+                _snapTile('Scheduled', '$scheduledCount',
                     Icons.schedule_rounded, AppColors.cyan),
+                _snapTile('Live', '$liveCount', Icons.public_rounded,
+                    AppColors.green),
+              ];
+              if (narrow) {
+                return Column(
+                  children: tiles
+                      .map((w) => Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: w,
+                  ))
+                      .toList(),
+                );
+              }
+              return Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: tiles
+                    .map((w) =>
+                    SizedBox(width: (c.maxWidth - 12) / 2, child: w))
+                    .toList(),
+              );
+            },
+          ),
+          const SizedBox(height: 20),
+          buildSectionTitle('Performance Snapshot'),
+          const SizedBox(height: 12),
+          LayoutBuilder(
+            builder: (context, c) {
+              final narrow = c.maxWidth < 600;
+              final tiles = [
                 _snapTile('Published', '${widget.publishedPosts.length}',
                     Icons.check_circle_rounded, AppColors.green),
                 _snapTile('Failed', '${widget.failedPosts.length}',
                     Icons.error_rounded, AppColors.red),
-                _snapTile('Engagement', _fmtInt(totalEngagement),
+                _snapTile('Total Engagement', _fmtInt(totalEngagement),
                     Icons.favorite_rounded, AppColors.pink),
               ];
               if (narrow) {
@@ -725,7 +1204,7 @@ class _ClientDashboardState extends State<ClientDashboard>
               subtitle: 'Schedule content from the Content tab.',
             )
           else
-            ..._localScheduled.take(3).map(buildPostCard),
+            ..._localScheduled.take(3).map((p) => _buildLivePostCard(p)),
         ],
       ),
     );
@@ -870,8 +1349,7 @@ class _ClientDashboardState extends State<ClientDashboard>
         );
         final meta = widget.client.metaConnected[e.key] ?? false;
         return Container(
-          padding:
-          const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(50),
             color: p.color.withOpacity(0.10),
@@ -908,7 +1386,9 @@ class _ClientDashboardState extends State<ClientDashboard>
     );
   }
 
-  // ── CALENDAR TAB
+  // ═════════════════════════════════════════════════════════════════════════
+  // CALENDAR TAB
+  // ═════════════════════════════════════════════════════════════════════════
   Widget _buildCalendarTab() {
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
@@ -916,6 +1396,8 @@ class _ClientDashboardState extends State<ClientDashboard>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          _buildCalendarStatusSummary(),
+          const SizedBox(height: 12),
           _buildCalendarFilterRow(),
           const SizedBox(height: 14),
           LayoutBuilder(
@@ -924,14 +1406,14 @@ class _ClientDashboardState extends State<ClientDashboard>
               final calendar = _buildCalendar();
               final filteredPosts = _applyCalendarFilters(_localScheduled);
               final postsForDay = filteredPosts
-                  .where((p) => isSameDay(p.scheduledAt, _selectedDate))
+                  .where((p) => _isSameDay(p.scheduledAt, _selectedDate))
                   .toList();
 
               final postsCol = Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   buildSectionTitle(
-                      'Posts on ${formatDateLong(_selectedDate)}'),
+                      'Posts on ${DateFormat('EEE, dd MMM yyyy').format(_selectedDate)} (${postsForDay.length})'),
                   const SizedBox(height: 10),
                   if (postsForDay.isEmpty)
                     buildEmptyState(
@@ -940,7 +1422,7 @@ class _ClientDashboardState extends State<ClientDashboard>
                       subtitle: 'Pick another date or adjust filters.',
                     )
                   else
-                    ...postsForDay.map(buildPostCard),
+                    ...postsForDay.map((p) => _buildLivePostCard(p)),
                 ],
               );
 
@@ -963,6 +1445,105 @@ class _ClientDashboardState extends State<ClientDashboard>
                 ],
               );
             },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCalendarStatusSummary() {
+    final all = _localScheduled;
+    final drafts = all.where((p) => p.status == PostStatus.draft).length;
+    final approvals =
+        all.where((p) => p.status == PostStatus.pendingApproval).length;
+    final scheduled =
+        all.where((p) => p.status == PostStatus.scheduled).length;
+    final live = all.where((p) => p.status == PostStatus.live).length;
+
+    final chips = [
+      _statusSummaryChip('Drafts', drafts, PostStatus.draft),
+      _statusSummaryChip('Approvals', approvals, PostStatus.pendingApproval),
+      _statusSummaryChip('Scheduled', scheduled, PostStatus.scheduled),
+      _statusSummaryChip('Live', live, PostStatus.live),
+    ];
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.borderLight),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Content Workflow',
+            style: GoogleFonts.outfit(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w800,
+              color: AppColors.textDark,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: chips,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _statusSummaryChip(String label, int count, PostStatus status) {
+    final color = _statusColor(status);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(10),
+        color: color.withOpacity(0.10),
+        border: Border.all(color: color.withOpacity(0.35)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 7,
+            height: 7,
+            decoration: BoxDecoration(shape: BoxShape.circle, color: color),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: GoogleFonts.outfit(
+              fontSize: 11.5,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textDarkSoft,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(50),
+              color: color.withOpacity(0.25),
+            ),
+            child: Text(
+              '$count',
+              style: GoogleFonts.outfit(
+                fontSize: 10.5,
+                fontWeight: FontWeight.w800,
+                color: color,
+              ),
+            ),
           ),
         ],
       ),
@@ -1004,7 +1585,9 @@ class _ClientDashboardState extends State<ClientDashboard>
             ),
             const SizedBox(width: 16),
             _calendarPlatformDropdown(),
-            const SizedBox(width: 16),
+            const SizedBox(width: 12),
+            _calendarStatusDropdown(),
+            const SizedBox(width: 12),
             _calendarFilterChip(
               label: 'Post',
               selected: _calendarTypeFilters.contains('Post'),
@@ -1033,6 +1616,7 @@ class _ClientDashboardState extends State<ClientDashboard>
               onTap: () => _toggleCalendarType('Video'),
             ),
             if (_calendarPlatformFilter != null ||
+                _calendarStatusFilter != null ||
                 _calendarTypeFilters.isNotEmpty) ...[
               const SizedBox(width: 16),
               Material(
@@ -1040,6 +1624,7 @@ class _ClientDashboardState extends State<ClientDashboard>
                 child: InkWell(
                   onTap: () => setState(() {
                     _calendarPlatformFilter = null;
+                    _calendarStatusFilter = null;
                     _calendarTypeFilters.clear();
                   }),
                   borderRadius: BorderRadius.circular(50),
@@ -1049,8 +1634,8 @@ class _ClientDashboardState extends State<ClientDashboard>
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(50),
                       color: AppColors.red.withOpacity(0.10),
-                      border: Border.all(
-                          color: AppColors.red.withOpacity(0.4)),
+                      border:
+                      Border.all(color: AppColors.red.withOpacity(0.4)),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -1094,9 +1679,8 @@ class _ClientDashboardState extends State<ClientDashboard>
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(50),
-            color: selected
-                ? color.withOpacity(0.16)
-                : AppColors.scaffoldLight,
+            color:
+            selected ? color.withOpacity(0.16) : AppColors.scaffoldLight,
             border: Border.all(
               color: selected
                   ? color.withOpacity(0.65)
@@ -1211,6 +1795,104 @@ class _ClientDashboardState extends State<ClientDashboard>
     );
   }
 
+  Widget _calendarStatusDropdown() {
+    return PopupMenuButton<PostStatus?>(
+      tooltip: 'Filter by status',
+      onSelected: (value) {
+        setState(() => _calendarStatusFilter = value?.name);
+      },
+      itemBuilder: (context) => [
+        PopupMenuItem<PostStatus?>(
+          value: null,
+          child: Text(
+            'All Status',
+            style: GoogleFonts.outfit(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textDark,
+            ),
+          ),
+        ),
+        ...PostStatus.values.map((s) {
+          final color = _statusColor(s);
+          return PopupMenuItem<PostStatus?>(
+            value: s,
+            child: Row(
+              children: [
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration:
+                  BoxDecoration(shape: BoxShape.circle, color: color),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  _statusLabel(s),
+                  style: GoogleFonts.outfit(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textDark,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }),
+      ],
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(50),
+          color: _calendarStatusFilter != null
+              ? AppColors.amber.withOpacity(0.16)
+              : AppColors.scaffoldLight,
+          border: Border.all(
+            color: _calendarStatusFilter != null
+                ? AppColors.amber.withOpacity(0.65)
+                : AppColors.borderLight,
+            width: _calendarStatusFilter != null ? 1.4 : 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Status',
+              style: GoogleFonts.outfit(
+                fontSize: 11.5,
+                fontWeight: _calendarStatusFilter != null
+                    ? FontWeight.w700
+                    : FontWeight.w500,
+                color: _calendarStatusFilter != null
+                    ? AppColors.amber
+                    : AppColors.textDarkSoft,
+              ),
+            ),
+            if (_calendarStatusFilter != null) ...[
+              const SizedBox(width: 6),
+              Text(
+                '· $_calendarStatusFilter',
+                style: GoogleFonts.outfit(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.amber,
+                ),
+              ),
+            ],
+            const SizedBox(width: 4),
+            Icon(
+              Icons.arrow_drop_down_rounded,
+              size: 18,
+              color: _calendarStatusFilter != null
+                  ? AppColors.amber
+                  : AppColors.textDarkMuted,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _toggleCalendarType(String type) {
     setState(() {
       if (_calendarTypeFilters.contains(type)) {
@@ -1226,12 +1908,18 @@ class _ClientDashboardState extends State<ClientDashboard>
       if (_calendarPlatformFilter != null) {
         if (p.platform != _calendarPlatformFilter) return false;
       }
+      if (_calendarStatusFilter != null) {
+        if (p.status.name != _calendarStatusFilter) return false;
+      }
       if (_calendarTypeFilters.isNotEmpty) {
         if (!_calendarTypeFilters.contains(p.type)) return false;
       }
       return true;
     }).toList();
   }
+
+  bool _isSameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
 
   Widget _buildCalendar() {
     final firstDay = DateTime(_calendarMonth.year, _calendarMonth.month, 1);
@@ -1268,7 +1956,7 @@ class _ClientDashboardState extends State<ClientDashboard>
                       _calendarMonth.year, _calendarMonth.month - 1));
                 }),
                 Text(
-                  formatMonthYear(_calendarMonth),
+                  DateFormat('MMMM yyyy').format(_calendarMonth),
                   style: GoogleFonts.bricolageGrotesque(
                     fontSize: 14,
                     fontWeight: FontWeight.w800,
@@ -1306,7 +1994,7 @@ class _ClientDashboardState extends State<ClientDashboard>
                 crossAxisCount: 7,
                 mainAxisSpacing: 6,
                 crossAxisSpacing: 6,
-                childAspectRatio: 1.05,
+                childAspectRatio: 0.85,
               ),
               itemCount: startWeekday + daysInMonth,
               itemBuilder: (context, i) {
@@ -1314,10 +2002,10 @@ class _ClientDashboardState extends State<ClientDashboard>
                 final day = i - startWeekday + 1;
                 final date =
                 DateTime(_calendarMonth.year, _calendarMonth.month, day);
-                final isSelected = isSameDay(date, _selectedDate);
-                final isToday = isSameDay(date, DateTime.now());
+                final isSelected = _isSameDay(date, _selectedDate);
+                final isToday = _isSameDay(date, DateTime.now());
                 final posts = filtered
-                    .where((p) => isSameDay(p.scheduledAt, date))
+                    .where((p) => _isSameDay(p.scheduledAt, date))
                     .toList();
 
                 return GestureDetector(
@@ -1341,39 +2029,60 @@ class _ClientDashboardState extends State<ClientDashboard>
                         width: isSelected ? 1.4 : 1,
                       ),
                     ),
-                    child: Stack(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Center(
-                          child: Text(
-                            '$day',
-                            style: GoogleFonts.outfit(
-                              fontSize: 11,
-                              fontWeight: isSelected
-                                  ? FontWeight.w800
-                                  : FontWeight.w600,
-                              color: AppColors.textDark,
+                        Row(
+                          children: [
+                            Text(
+                              '$day',
+                              style: GoogleFonts.outfit(
+                                fontSize: 11,
+                                fontWeight: isSelected
+                                    ? FontWeight.w800
+                                    : FontWeight.w600,
+                                color: AppColors.textDark,
+                              ),
                             ),
+                            const Spacer(),
+                            if (posts.isNotEmpty)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 4, vertical: 1),
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(4),
+                                  color: AppColors.amber.withOpacity(0.25),
+                                ),
+                                child: Text(
+                                  '${posts.length}',
+                                  style: GoogleFonts.outfit(
+                                    fontSize: 8,
+                                    fontWeight: FontWeight.w800,
+                                    color: AppColors.amber,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 2),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment:
+                            CrossAxisAlignment.stretch,
+                            children: posts
+                                .take(2)
+                                .map((p) => _miniCalendarChip(p))
+                                .toList(),
                           ),
                         ),
-                        if (posts.isNotEmpty)
-                          Positioned(
-                            bottom: 3,
-                            left: 0,
-                            right: 0,
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: posts.take(3).map((p) {
-                                return Container(
-                                  width: 4,
-                                  height: 4,
-                                  margin: const EdgeInsets.symmetric(
-                                      horizontal: 1),
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    color: p.color,
-                                  ),
-                                );
-                              }).toList(),
+                        if (posts.length > 2)
+                          Text(
+                            '+${posts.length - 2}',
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.outfit(
+                              fontSize: 7.5,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.textDarkMuted,
                             ),
                           ),
                       ],
@@ -1397,6 +2106,42 @@ class _ClientDashboardState extends State<ClientDashboard>
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _miniCalendarChip(ScheduledPost p) {
+    final sc = _statusColor(p.status);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 2),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(4),
+        color: p.color.withOpacity(0.15),
+        border: Border.all(color: p.color.withOpacity(0.5), width: 0.5),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 4,
+            height: 4,
+            decoration: BoxDecoration(shape: BoxShape.circle, color: sc),
+          ),
+          const SizedBox(width: 3),
+          Expanded(
+            child: Text(
+              p.title,
+              style: GoogleFonts.outfit(
+                fontSize: 7.5,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textDark,
+                height: 1.1,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1435,7 +2180,562 @@ class _ClientDashboardState extends State<ClientDashboard>
     );
   }
 
-  // ── Analytics date range
+  // ═════════════════════════════════════════════════════════════════════════
+  // ANALYTICS WITH PDF EXPORT (FIXED)
+  // ═════════════════════════════════════════════════════════════════════════
+  Widget _buildAnalyticsWithExport() {
+    return Column(
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          color: Colors.white,
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Analytics Report',
+                  style: GoogleFonts.bricolageGrotesque(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.textDark,
+                  ),
+                ),
+              ),
+              ElevatedButton.icon(
+                onPressed: _isExporting ? null : _exportAnalyticsPdf,
+                icon: _isExporting
+                    ? const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+                    : const Icon(Icons.picture_as_pdf_rounded,
+                    size: 16, color: Colors.white),
+                label: Text(
+                  _isExporting ? 'Exporting...' : 'Download PDF',
+                  style: GoogleFonts.outfit(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12.5,
+                  ),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.pink,
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 14, vertical: 10),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  elevation: 0,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const Divider(height: 1, color: AppColors.borderLight),
+        Expanded(
+          child: PublishingSections.buildAnalyticsSection(
+            widget.publishedPosts,
+            filterClientName: _client.companyName,
+            dateRange: _analyticsRange,
+            onDateRangeTap: _showAnalyticsDateRangePicker,
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ═════════════════════════════════════════════════════════════════════════
+  // PDF EXPORT (FIXED)
+  // ═════════════════════════════════════════════════════════════════════════
+  Future<void> _exportAnalyticsPdf() async {
+    if (_isExporting) return;
+    setState(() => _isExporting = true);
+
+    try {
+      // ── Build the document
+      final doc = pw.Document();
+
+      // Load fonts using printing's PdfGoogleFonts (correct API)
+      final pw.Font baseFont;
+      final pw.Font boldFont;
+      final pw.Font headingFont;
+      try {
+        baseFont = await PdfGoogleFonts.outfitRegular();
+        boldFont = await PdfGoogleFonts.outfitBold();
+        headingFont = await PdfGoogleFonts.bricolageGrotesqueBold();
+      } catch (fontErr) {
+        // Fallback to built-in Helvetica if the network font fails
+        debugPrint('Font load failed, using fallback: $fontErr');
+        // pdf package's default font is Helvetica via pw.Font.helvetica()
+        // but the pdf package doesn't expose them directly for reuse in
+        // multiple functions here — instead we rebuild with built-in styles.
+        // So we throw a clean error to the user.
+        throw Exception(
+            'Fonts could not be loaded. Please check your internet connection and try again.');
+      }
+
+      final theme = pw.ThemeData.withFont(base: baseFont, bold: boldFont);
+
+      // ── Gather data
+      final published = widget.publishedPosts
+          .where((p) => p.clientName == _client.companyName)
+          .toList();
+      final scheduled = _localScheduled
+          .where((p) => p.clientName == _client.companyName)
+          .toList();
+      final failed = widget.failedPosts
+          .where((p) => p.clientName == _client.companyName)
+          .toList();
+
+      final totalLikes = published.fold<int>(0, (s, p) => s + p.likes);
+      final totalComments = published.fold<int>(0, (s, p) => s + p.comments);
+      final totalShares = published.fold<int>(0, (s, p) => s + p.shares);
+      final totalEngagement = totalLikes + totalComments + totalShares;
+
+      final drafts =
+          scheduled.where((p) => p.status == PostStatus.draft).length;
+      final approvals = scheduled
+          .where((p) => p.status == PostStatus.pendingApproval)
+          .length;
+      final scheduledCount =
+          scheduled.where((p) => p.status == PostStatus.scheduled).length;
+      final liveCount =
+          scheduled.where((p) => p.status == PostStatus.live).length;
+
+      doc.addPage(
+        pw.MultiPage(
+          theme: theme,
+          pageFormat: PdfPageFormat.a4,
+          margin: const pw.EdgeInsets.all(36),
+          header: (context) => pw.Container(
+            padding: const pw.EdgeInsets.only(bottom: 8),
+            alignment: pw.Alignment.centerRight,
+            child: pw.Text(
+              'Socialee Sphere Analytics',
+              style: pw.TextStyle(
+                font: baseFont,
+                fontSize: 8.5,
+                color: PdfColors.grey600,
+              ),
+            ),
+          ),
+          footer: (context) => pw.Container(
+            padding: const pw.EdgeInsets.only(top: 8),
+            alignment: pw.Alignment.center,
+            child: pw.Text(
+              'Page ${context.pageNumber} of ${context.pagesCount}',
+              style: pw.TextStyle(
+                font: baseFont,
+                fontSize: 8.5,
+                color: PdfColors.grey600,
+              ),
+            ),
+          ),
+          build: (context) => [
+            // ── Header band
+            pw.Container(
+              padding: const pw.EdgeInsets.all(16),
+              decoration: pw.BoxDecoration(
+                color: PdfColor.fromInt(0xFF1E1B4B),
+                borderRadius: pw.BorderRadius.circular(10),
+              ),
+              child: pw.Row(
+                children: [
+                  pw.Expanded(
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text(
+                          _client.companyName,
+                          style: pw.TextStyle(
+                            font: headingFont,
+                            fontSize: 20,
+                            color: PdfColors.white,
+                            fontWeight: pw.FontWeight.bold,
+                          ),
+                        ),
+                        pw.SizedBox(height: 4),
+                        pw.Text(
+                          'Analytics Report • ${_analyticsRange.label}',
+                          style: pw.TextStyle(
+                            font: baseFont,
+                            fontSize: 11,
+                            color: PdfColors.grey300,
+                          ),
+                        ),
+                        pw.Text(
+                          'Generated: ${DateFormat('dd MMM yyyy • HH:mm').format(DateTime.now())}',
+                          style: pw.TextStyle(
+                            font: baseFont,
+                            fontSize: 9,
+                            color: PdfColors.grey400,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            pw.SizedBox(height: 20),
+
+            // ── Client info
+            _pdfSectionTitle('Client Information', headingFont),
+            pw.SizedBox(height: 8),
+            pw.Container(
+              padding: const pw.EdgeInsets.all(12),
+              decoration: pw.BoxDecoration(
+                border: pw.Border.all(color: PdfColors.grey300),
+                borderRadius: pw.BorderRadius.circular(8),
+              ),
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  _pdfInfoRow(
+                      'Company', _client.companyName, baseFont, boldFont),
+                  _pdfInfoRow('Email', _client.email, baseFont, boldFont),
+                  _pdfInfoRow('Mobile', _client.mobile, baseFont, boldFont),
+                  _pdfInfoRow('Address', _client.address, baseFont, boldFont),
+                  if (_client.website.isNotEmpty)
+                    _pdfInfoRow(
+                        'Website', _client.website, baseFont, boldFont),
+                  _pdfInfoRow(
+                    'Social Handles',
+                    '${_client.socialHandles.length} connected',
+                    baseFont,
+                    boldFont,
+                  ),
+                ],
+              ),
+            ),
+            pw.SizedBox(height: 20),
+
+            // ── KPIs
+            _pdfSectionTitle('Key Performance Indicators', headingFont),
+            pw.SizedBox(height: 8),
+            pw.Row(
+              children: [
+                _pdfKpiCard('Total Likes', totalLikes, PdfColors.pink700,
+                    baseFont, boldFont),
+                pw.SizedBox(width: 8),
+                _pdfKpiCard('Total Comments', totalComments,
+                    PdfColors.cyan700, baseFont, boldFont),
+                pw.SizedBox(width: 8),
+                _pdfKpiCard('Total Shares', totalShares, PdfColors.green700,
+                    baseFont, boldFont),
+                pw.SizedBox(width: 8),
+                _pdfKpiCard('Total Engagement', totalEngagement,
+                    PdfColors.purple700, baseFont, boldFont),
+              ],
+            ),
+            pw.SizedBox(height: 20),
+
+            // ── Workflow
+            _pdfSectionTitle('Content Workflow Snapshot', headingFont),
+            pw.SizedBox(height: 8),
+            pw.Row(
+              children: [
+                _pdfKpiCard('Drafts', drafts, PdfColors.grey600, baseFont,
+                    boldFont),
+                pw.SizedBox(width: 8),
+                _pdfKpiCard('Approvals', approvals, PdfColors.amber700,
+                    baseFont, boldFont),
+                pw.SizedBox(width: 8),
+                _pdfKpiCard('Scheduled', scheduledCount, PdfColors.blue700,
+                    baseFont, boldFont),
+                pw.SizedBox(width: 8),
+                _pdfKpiCard('Live', liveCount, PdfColors.green700, baseFont,
+                    boldFont),
+              ],
+            ),
+            pw.SizedBox(height: 20),
+
+            // ── Published table
+            _pdfSectionTitle('Published Posts Performance', headingFont),
+            pw.SizedBox(height: 8),
+            if (published.isEmpty)
+              pw.Text('No published posts in this period.',
+                  style: pw.TextStyle(font: baseFont, fontSize: 11))
+            else
+              pw.TableHelper.fromTextArray(
+                headers: const [
+                  'Post',
+                  'Platform',
+                  'Published',
+                  'Likes',
+                  'Comments',
+                  'Shares',
+                ],
+                data: published.map((p) {
+                  return [
+                    p.title,
+                    p.platform,
+                    DateFormat('dd MMM yyyy').format(p.publishedAt),
+                    '${p.likes}',
+                    '${p.comments}',
+                    '${p.shares}',
+                  ];
+                }).toList(),
+                headerStyle: pw.TextStyle(
+                  font: boldFont,
+                  fontSize: 10,
+                  color: PdfColors.white,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+                headerDecoration: const pw.BoxDecoration(
+                  color: PdfColor.fromInt(0xFF311042),
+                ),
+                cellStyle: pw.TextStyle(font: baseFont, fontSize: 9.5),
+                cellAlignment: pw.Alignment.centerLeft,
+                headerAlignment: pw.Alignment.centerLeft,
+                cellPadding:
+                const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+                border:
+                pw.TableBorder.all(color: PdfColors.grey300, width: 0.5),
+              ),
+            pw.SizedBox(height: 20),
+
+            // ── Scheduled queue
+            _pdfSectionTitle('Scheduled Content Queue', headingFont),
+            pw.SizedBox(height: 8),
+            if (scheduled.isEmpty)
+              pw.Text('No scheduled content.',
+                  style: pw.TextStyle(font: baseFont, fontSize: 11))
+            else
+              pw.TableHelper.fromTextArray(
+                headers: const [
+                  'Title',
+                  'Platform',
+                  'Type',
+                  'Status',
+                  'Scheduled',
+                  'Owner',
+                ],
+                data: scheduled.map((p) {
+                  return [
+                    p.title,
+                    p.platform,
+                    p.type,
+                    _statusLabel(p.status),
+                    DateFormat('dd MMM • HH:mm').format(p.scheduledAt),
+                    p.ownerName,
+                  ];
+                }).toList(),
+                headerStyle: pw.TextStyle(
+                  font: boldFont,
+                  fontSize: 10,
+                  color: PdfColors.white,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+                headerDecoration: const pw.BoxDecoration(
+                    color: PdfColor.fromInt(0xFF1E1B4B)),
+                cellStyle: pw.TextStyle(font: baseFont, fontSize: 9.5),
+                cellAlignment: pw.Alignment.centerLeft,
+                headerAlignment: pw.Alignment.centerLeft,
+                cellPadding:
+                const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+                border:
+                pw.TableBorder.all(color: PdfColors.grey300, width: 0.5),
+              ),
+            pw.SizedBox(height: 20),
+
+            // ── Failed
+            if (failed.isNotEmpty) ...[
+              _pdfSectionTitle('Failed Posts', headingFont),
+              pw.SizedBox(height: 8),
+              pw.TableHelper.fromTextArray(
+                headers: const [
+                  'Title',
+                  'Platform',
+                  'Failed',
+                  'Reason',
+                ],
+                data: failed.map((p) {
+                  return [
+                    p.title,
+                    p.platform,
+                    DateFormat('dd MMM yyyy').format(p.failedAt),
+                    p.reason,
+                  ];
+                }).toList(),
+                headerStyle: pw.TextStyle(
+                  font: boldFont,
+                  fontSize: 10,
+                  color: PdfColors.white,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+                headerDecoration: const pw.BoxDecoration(
+                    color: PdfColor.fromInt(0xFFB91C1C)),
+                cellStyle: pw.TextStyle(font: baseFont, fontSize: 9.5),
+                cellAlignment: pw.Alignment.centerLeft,
+                headerAlignment: pw.Alignment.centerLeft,
+                cellPadding:
+                const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+                border:
+                pw.TableBorder.all(color: PdfColors.grey300, width: 0.5),
+              ),
+              pw.SizedBox(height: 20),
+            ],
+
+            // ── Footer note
+            pw.Divider(color: PdfColors.grey400),
+            pw.SizedBox(height: 6),
+            pw.Text(
+              'Socialee Sphere • Confidential Analytics Report • ${_client.companyName}',
+              style: pw.TextStyle(
+                font: baseFont,
+                fontSize: 9,
+                color: PdfColors.grey600,
+              ),
+              textAlign: pw.TextAlign.center,
+            ),
+          ],
+        ),
+      );
+
+      // ── Save bytes
+      final bytes = await doc.save();
+
+      // ── Sanitize filename
+      final safeName = _client.companyName
+          .replaceAll(RegExp(r'[^A-Za-z0-9_\-]'), '_')
+          .trim();
+      final filename =
+          'analytics_${safeName.isEmpty ? 'client' : safeName}_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.pdf';
+
+      // ── Share (this opens the native share dialog)
+      await Printing.sharePdf(bytes: bytes, filename: filename);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'PDF report generated successfully!',
+              style: GoogleFonts.outfit(
+                  color: Colors.white, fontWeight: FontWeight.w600),
+            ),
+            backgroundColor: AppColors.green.withOpacity(0.9),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e, st) {
+      debugPrint('PDF export error: $e\n$st');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Failed to export PDF: $e',
+              style: GoogleFonts.outfit(
+                  color: Colors.white, fontWeight: FontWeight.w600),
+            ),
+            backgroundColor: AppColors.red.withOpacity(0.9),
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isExporting = false);
+    }
+  }
+
+  pw.Widget _pdfSectionTitle(String title, pw.Font fontHeading) {
+    return pw.Container(
+      padding: const pw.EdgeInsets.only(bottom: 4),
+      decoration: const pw.BoxDecoration(
+        border: pw.Border(
+          bottom: pw.BorderSide(
+              color: PdfColor.fromInt(0xFF311042), width: 2),
+        ),
+      ),
+      child: pw.Text(
+        title,
+        style: pw.TextStyle(
+          font: fontHeading,
+          fontSize: 13,
+          fontWeight: pw.FontWeight.bold,
+          color: const PdfColor.fromInt(0xFF311042),
+        ),
+      ),
+    );
+  }
+
+  pw.Widget _pdfInfoRow(
+      String label, String value, pw.Font font, pw.Font fontBold) {
+    return pw.Padding(
+      padding: const pw.EdgeInsets.symmetric(vertical: 3),
+      child: pw.Row(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.SizedBox(
+            width: 100,
+            child: pw.Text(
+              '$label:',
+              style: pw.TextStyle(
+                font: fontBold,
+                fontSize: 10,
+                color: PdfColors.grey700,
+              ),
+            ),
+          ),
+          pw.Expanded(
+            child: pw.Text(
+              value.isEmpty ? '—' : value,
+              style: pw.TextStyle(font: font, fontSize: 10),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  pw.Widget _pdfKpiCard(
+      String label,
+      int value,
+      PdfColor color,
+      pw.Font font,
+      pw.Font fontBold,
+      ) {
+    return pw.Expanded(
+      child: pw.Container(
+        padding: const pw.EdgeInsets.all(10),
+        decoration: pw.BoxDecoration(
+          color: PdfColor(color.red, color.green, color.blue, 0.10),
+          border: pw.Border.all(color: color, width: 0.8),
+          borderRadius: pw.BorderRadius.circular(6),
+        ),
+        child: pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.Text(
+              label,
+              style: pw.TextStyle(
+                font: font,
+                fontSize: 8.5,
+                color: PdfColors.grey700,
+              ),
+            ),
+            pw.SizedBox(height: 4),
+            pw.Text(
+              _fmtInt(value),
+              style: pw.TextStyle(
+                font: fontBold,
+                fontSize: 16,
+                fontWeight: pw.FontWeight.bold,
+                color: color,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _showAnalyticsDateRangePicker() async {
     final now = DateTime.now();
     final result = await showModalBottomSheet<DateRangeSelection>(
@@ -1523,6 +2823,114 @@ class _ClientDashboardState extends State<ClientDashboard>
   }
 }
 
+// ═════════════════════════════════════════════════════════════════════════════
+// LIVE COUNTER WIDGETS
+// ═════════════════════════════════════════════════════════════════════════════
+class _LiveCounter extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final int value;
+  final Color color;
+
+  const _LiveCounter({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(10),
+        color: color.withOpacity(0.08),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 12, color: color),
+              const SizedBox(width: 4),
+              Text(
+                label,
+                style: GoogleFonts.outfit(
+                  fontSize: 9.5,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textDarkMuted,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 2),
+          _AnimatedCounter(
+            value: value,
+            style: GoogleFonts.bricolageGrotesque(
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AnimatedCounter extends StatelessWidget {
+  final int value;
+  final TextStyle style;
+
+  const _AnimatedCounter({required this.value, required this.style});
+
+  @override
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: value.toDouble()),
+      duration: const Duration(milliseconds: 700),
+      curve: Curves.easeOutCubic,
+      builder: (context, v, _) {
+        return Text(_formatValue(v.round()), style: style);
+      },
+    );
+  }
+
+  String _formatValue(int n) {
+    if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
+    if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}K';
+    return '$n';
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// MODELS
+// ═════════════════════════════════════════════════════════════════════════════
+class LiveEngagement {
+  final int likes;
+  final int comments;
+  final int shares;
+  final DateTime lastUpdated;
+
+  LiveEngagement({
+    required this.likes,
+    required this.comments,
+    required this.shares,
+    required this.lastUpdated,
+  });
+
+  LiveEngagement increment() {
+    return LiveEngagement(
+      likes: likes + (1 + (DateTime.now().millisecond % 5)),
+      comments: comments + (DateTime.now().millisecond % 3 == 0 ? 1 : 0),
+      shares: shares + (DateTime.now().millisecond % 7 == 0 ? 1 : 0),
+      lastUpdated: DateTime.now(),
+    );
+  }
+}
+
 class _ClientTab {
   final String label;
   final IconData icon;
@@ -1543,15 +2951,15 @@ class _ClientPlatformEntry {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// CREATE CONTENT FORM — MULTI-MEDIA CAROUSEL + PLATFORM PREVIEW
+// CLIENT CREATE CONTENT FORM
 // ═════════════════════════════════════════════════════════════════════════════
-class CreateContentForm extends StatefulWidget {
+class ClientCreateContentForm extends StatefulWidget {
   final List<ClientModel> clients;
   final ValueChanged<ScheduledPost> onSave;
   final VoidCallback onCancel;
   final ClientModel? lockedClient;
 
-  const CreateContentForm({
+  const ClientCreateContentForm({
     super.key,
     required this.clients,
     required this.onSave,
@@ -1560,30 +2968,27 @@ class CreateContentForm extends StatefulWidget {
   });
 
   @override
-  State<CreateContentForm> createState() => _CreateContentFormState();
+  State<ClientCreateContentForm> createState() =>
+      _ClientCreateContentFormState();
 }
 
-class _CreateContentFormState extends State<CreateContentForm> {
+class _ClientCreateContentFormState extends State<ClientCreateContentForm> {
   final _formKey = GlobalKey<FormState>();
-
   final _title = TextEditingController();
   final _caption = TextEditingController();
+  final _owner = TextEditingController(text: 'Admin');
 
   ClientModel? _selectedClient;
   String? _selectedPlatform;
   String _contentType = 'Post';
+  PostStatus _status = PostStatus.draft;
   DateTime _scheduledDate = DateTime.now().add(const Duration(hours: 1));
   TimeOfDay _scheduledTime = TimeOfDay.now();
 
-  /// Media items selected by the user (multi-select).
   final List<_PickedMedia> _mediaList = [];
-
-  /// Index of the YouTube thumbnail selection (only used for YouTube).
   int? _youTubeThumbnailIndex;
-
   bool _showPreview = false;
 
-  /// Accepted extensions for the picker.
   static const _imageExt = ['png', 'jpg', 'jpeg', 'webp', 'gif'];
   static const _videoExt = ['mp4', 'mov', 'm4v', 'webm'];
 
@@ -1597,10 +3002,10 @@ class _CreateContentFormState extends State<CreateContentForm> {
   void dispose() {
     _title.dispose();
     _caption.dispose();
+    _owner.dispose();
     super.dispose();
   }
 
-  // ── Aspect ratio per platform/type
   double _aspectRatioFor(String? platform, String type) {
     if (type == 'Reel' || type == 'Story') return 9 / 16;
     switch (platform) {
@@ -1623,7 +3028,6 @@ class _CreateContentFormState extends State<CreateContentForm> {
   bool get _isThreads => _selectedPlatform == 'Threads';
   bool get _isLinkedIn => _selectedPlatform == 'LinkedIn';
 
-  /// Platforms that don't require a title (title-less UI).
   bool get _hideTitleField =>
       _isInstagram || _isFacebook || _isThreads || _isYouTube;
 
@@ -1638,19 +3042,14 @@ class _CreateContentFormState extends State<CreateContentForm> {
     return platform.allowedContentTypes;
   }
 
-  // ── Multi-file picker
   Future<void> _pickMedia() async {
     try {
       final isVideoType = _contentType == 'Reel' || _contentType == 'Video';
-      final allowedExt = isVideoType
-          ? _videoExt
-          : [..._imageExt, ..._videoExt]; // allow mixing for posts
-      final fileType = isVideoType
-          ? FileType.custom
-          : FileType.custom;
+      final allowedExt =
+      isVideoType ? _videoExt : [..._imageExt, ..._videoExt];
 
       final result = await FilePicker.platform.pickFiles(
-        type: fileType,
+        type: FileType.custom,
         allowedExtensions: allowedExt,
         allowMultiple: true,
         withData: true,
@@ -1671,10 +3070,8 @@ class _CreateContentFormState extends State<CreateContentForm> {
         if (!mounted) return;
         setState(() {
           _mediaList.addAll(picked);
-          // Auto-pick first image as YouTube thumbnail if none yet
           if (_isYouTube && _youTubeThumbnailIndex == null) {
-            final firstImage =
-            _mediaList.indexWhere((m) => !m.isVideo);
+            final firstImage = _mediaList.indexWhere((m) => !m.isVideo);
             if (firstImage != -1) _youTubeThumbnailIndex = firstImage;
           }
         });
@@ -1721,14 +3118,43 @@ class _CreateContentFormState extends State<CreateContentForm> {
       );
     }
 
-    if (_showPreview) {
-      return _buildPreviewScreen();
-    }
-
+    if (_showPreview) return _buildPreviewScreen();
     return _buildFormScreen();
   }
 
-  // ── MAIN FORM
+  Widget _stepLabel(String text) {
+    return Text(
+      text,
+      style: GoogleFonts.outfit(
+        color: AppColors.textDarkSoft,
+        fontWeight: FontWeight.w600,
+        fontSize: 12.5,
+      ),
+    );
+  }
+
+  InputDecoration _inputDecoration(String label) {
+    return InputDecoration(
+      labelText: label,
+      labelStyle: GoogleFonts.outfit(color: AppColors.textDarkMuted),
+      filled: true,
+      fillColor: AppColors.scaffoldLight,
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide.none,
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: AppColors.borderLight),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide:
+        BorderSide(color: AppColors.purple.withOpacity(0.6), width: 1.5),
+      ),
+    );
+  }
+
   Widget _buildFormScreen() {
     final availablePlatforms = _selectedClient == null
         ? <SocialPlatform>[]
@@ -1774,46 +3200,19 @@ class _CreateContentFormState extends State<CreateContentForm> {
                 ),
               ),
               const SizedBox(height: 16),
-
-              // ── Step 1: Client
-              Text(
-                'Step 1 — Select Client',
-                style: GoogleFonts.outfit(
-                  color: AppColors.textDarkSoft,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 12.5,
-                ),
-              ),
+              _stepLabel('Step 1 — Select Client'),
               const SizedBox(height: 8),
               DropdownButtonFormField<ClientModel>(
                 value: _selectedClient,
                 dropdownColor: Colors.white,
-                decoration: InputDecoration(
-                  labelText: 'Client',
-                  labelStyle:
-                  GoogleFonts.outfit(color: AppColors.textDarkMuted),
-                  filled: true,
-                  fillColor: AppColors.scaffoldLight,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: AppColors.borderLight),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(
-                        color: AppColors.purple.withOpacity(0.6), width: 1.5),
-                  ),
-                ),
+                decoration: _inputDecoration('Client'),
                 items: widget.clients
                     .map((c) => DropdownMenuItem(
                   value: c,
                   child: Text(
                     c.companyName,
-                    style: GoogleFonts.outfit(color: AppColors.textDark),
+                    style: GoogleFonts.outfit(
+                        color: AppColors.textDark),
                   ),
                 ))
                     .toList(),
@@ -1827,17 +3226,8 @@ class _CreateContentFormState extends State<CreateContentForm> {
                 }),
               ),
               const SizedBox(height: 16),
-
-              // ── Step 2: Social account
               if (_selectedClient != null) ...[
-                Text(
-                  'Step 2 — Select Social Account',
-                  style: GoogleFonts.outfit(
-                    color: AppColors.textDarkSoft,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 12.5,
-                  ),
-                ),
+                _stepLabel('Step 2 — Select Social Account'),
                 const SizedBox(height: 8),
                 if (availablePlatforms.isEmpty)
                   Container(
@@ -1922,17 +3312,8 @@ class _CreateContentFormState extends State<CreateContentForm> {
                   ),
                 const SizedBox(height: 16),
               ],
-
-              // ── Step 3: Content type
               if (_selectedPlatform != null) ...[
-                Text(
-                  'Step 3 — Content Type',
-                  style: GoogleFonts.outfit(
-                    color: AppColors.textDarkSoft,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 12.5,
-                  ),
-                ),
+                _stepLabel('Step 3 — Content Type'),
                 const SizedBox(height: 8),
                 Wrap(
                   spacing: 8,
@@ -1953,7 +3334,8 @@ class _CreateContentFormState extends State<CreateContentForm> {
                           borderRadius: BorderRadius.circular(10),
                           gradient:
                           isSelected ? AppColors.primaryGradient : null,
-                          color: isSelected ? null : AppColors.scaffoldLight,
+                          color:
+                          isSelected ? null : AppColors.scaffoldLight,
                           border: Border.all(
                             color: isSelected
                                 ? AppColors.cyan
@@ -1996,20 +3378,12 @@ class _CreateContentFormState extends State<CreateContentForm> {
                 ),
                 const SizedBox(height: 16),
               ],
-
-              // ── Step 4: Media (multi-select carousel)
               if (_selectedPlatform != null) ...[
                 Row(
                   children: [
                     Expanded(
-                      child: Text(
-                        'Step 4 — Upload Media (multi-select carousel)',
-                        style: GoogleFonts.outfit(
-                          color: AppColors.textDarkSoft,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 12.5,
-                        ),
-                      ),
+                      child: _stepLabel(
+                          'Step 4 — Upload Media (multi-select carousel)'),
                     ),
                     if (_mediaList.isNotEmpty)
                       TextButton.icon(
@@ -2034,60 +3408,28 @@ class _CreateContentFormState extends State<CreateContentForm> {
                       fontSize: 10.5, color: AppColors.textDarkMuted),
                 ),
                 const SizedBox(height: 10),
-
-                // Upload / dropzone
                 _buildUploadZone(),
                 const SizedBox(height: 12),
-
-                // Carousel preview of picked media
                 if (_mediaList.isNotEmpty) ...[
                   _buildCarousel(),
                   const SizedBox(height: 12),
-
-                  // YouTube thumbnail picker
                   if (_isYouTube) ...[
-                    Text(
-                      'Choose YouTube Thumbnail',
-                      style: GoogleFonts.outfit(
-                        color: AppColors.textDarkSoft,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 12.5,
-                      ),
-                    ),
+                    _stepLabel('Choose YouTube Thumbnail'),
                     const SizedBox(height: 6),
                     _buildThumbnailPicker(),
                     const SizedBox(height: 16),
                   ],
                 ],
               ],
-
-              // ── Step 5: Details (title hidden for IG/FB/Threads/YT)
               if (_selectedPlatform != null) ...[
-                Text(
-                  'Step 5 — Details',
-                  style: GoogleFonts.outfit(
-                    color: AppColors.textDarkSoft,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 12.5,
-                  ),
-                ),
+                _stepLabel('Step 5 — Details'),
                 const SizedBox(height: 8),
                 if (!_hideTitleField) ...[
                   TextFormField(
                     controller: _title,
                     validator: (v) => v!.isEmpty ? 'Required' : null,
                     style: GoogleFonts.outfit(color: AppColors.textDark),
-                    decoration: InputDecoration(
-                      labelText: 'Post Title',
-                      labelStyle:
-                      GoogleFonts.outfit(color: AppColors.textDarkMuted),
-                      filled: true,
-                      fillColor: AppColors.scaffoldLight,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide.none,
-                      ),
-                    ),
+                    decoration: _inputDecoration('Post Title'),
                   ),
                   const SizedBox(height: 12),
                 ] else
@@ -2125,21 +3467,72 @@ class _CreateContentFormState extends State<CreateContentForm> {
                   maxLines: 3,
                   validator: (v) => v!.isEmpty ? 'Required' : null,
                   style: GoogleFonts.outfit(color: AppColors.textDark),
-                  decoration: InputDecoration(
-                    labelText: 'Caption & Hashtags',
-                    labelStyle:
-                    GoogleFonts.outfit(color: AppColors.textDarkMuted),
-                    filled: true,
-                    fillColor: AppColors.scaffoldLight,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none,
-                    ),
-                  ),
+                  decoration: _inputDecoration('Caption & Hashtags'),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _owner,
+                  style: GoogleFonts.outfit(color: AppColors.textDark),
+                  decoration: _inputDecoration('Content Owner'),
+                ),
+                const SizedBox(height: 12),
+                _stepLabel('Workflow Status'),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: PostStatus.values.map((s) {
+                    final color = clientStatusColor(s);
+                    final isSelected = _status == s;
+                    return GestureDetector(
+                      onTap: () => setState(() => _status = s),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(10),
+                          color: isSelected
+                              ? color.withOpacity(0.15)
+                              : AppColors.scaffoldLight,
+                          border: Border.all(
+                            color: isSelected
+                                ? color
+                                : AppColors.borderLight,
+                            width: isSelected ? 1.5 : 1,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: color,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              clientStatusLabel(s),
+                              style: GoogleFonts.outfit(
+                                fontSize: 12,
+                                fontWeight: isSelected
+                                    ? FontWeight.w700
+                                    : FontWeight.w500,
+                                color: isSelected
+                                    ? color
+                                    : AppColors.textDarkSoft,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }).toList(),
                 ),
                 const SizedBox(height: 16),
-
-                // Date + time
                 Row(
                   children: [
                     Expanded(
@@ -2159,7 +3552,7 @@ class _CreateContentFormState extends State<CreateContentForm> {
                         icon: const Icon(Icons.calendar_today_rounded,
                             size: 16, color: AppColors.textDark),
                         label: Text(
-                          '${_scheduledDate.day}/${_scheduledDate.month}/${_scheduledDate.year}',
+                          DateFormat('dd/MM/yyyy').format(_scheduledDate),
                           style:
                           GoogleFonts.outfit(color: AppColors.textDark),
                         ),
@@ -2189,8 +3582,6 @@ class _CreateContentFormState extends State<CreateContentForm> {
                   ],
                 ),
                 const SizedBox(height: 24),
-
-                // Preview button
                 ElevatedButton.icon(
                   onPressed: _openPreview,
                   icon: const Icon(Icons.visibility_rounded,
@@ -2220,13 +3611,11 @@ class _CreateContentFormState extends State<CreateContentForm> {
     );
   }
 
-  // ── Upload zone
   Widget _buildUploadZone() {
     final aspect = _aspectRatioFor(_selectedPlatform, _contentType);
     return Center(
       child: ConstrainedBox(
-        constraints:
-        const BoxConstraints(maxHeight: 260, maxWidth: 320),
+        constraints: const BoxConstraints(maxHeight: 260, maxWidth: 320),
         child: AspectRatio(
           aspectRatio: aspect,
           child: GestureDetector(
@@ -2254,9 +3643,7 @@ class _CreateContentFormState extends State<CreateContentForm> {
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    _mediaList.isEmpty
-                        ? 'Tap to pick media'
-                        : 'Add more media',
+                    _mediaList.isEmpty ? 'Tap to pick media' : 'Add more media',
                     style: GoogleFonts.outfit(
                       fontSize: 13.5,
                       color: AppColors.textDarkSoft,
@@ -2278,7 +3665,6 @@ class _CreateContentFormState extends State<CreateContentForm> {
     );
   }
 
-  // ── Carousel of picked media
   Widget _buildCarousel() {
     return SizedBox(
       height: 140,
@@ -2329,13 +3715,12 @@ class _CreateContentFormState extends State<CreateContentForm> {
                   )
                       : Image.memory(
                     m.bytes,
-                    fit: BoxFit.cover,
+                    fit: BoxFit.contain,
                     width: 110,
                     height: 140,
                   ),
                 ),
               ),
-              // Remove button
               Positioned(
                 top: 4,
                 right: 4,
@@ -2347,15 +3732,14 @@ class _CreateContentFormState extends State<CreateContentForm> {
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       color: Colors.black.withOpacity(0.6),
-                      border: Border.all(
-                          color: AppColors.red.withOpacity(0.8)),
+                      border:
+                      Border.all(color: AppColors.red.withOpacity(0.8)),
                     ),
                     child: const Icon(Icons.close_rounded,
                         size: 12, color: Colors.white),
                   ),
                 ),
               ),
-              // Video badge
               if (m.isVideo)
                 Positioned(
                   bottom: 6,
@@ -2384,7 +3768,6 @@ class _CreateContentFormState extends State<CreateContentForm> {
     );
   }
 
-  // ── YouTube thumbnail picker
   Widget _buildThumbnailPicker() {
     final images = <MapEntry<int, _PickedMedia>>[];
     for (var i = 0; i < _mediaList.length; i++) {
@@ -2400,8 +3783,7 @@ class _CreateContentFormState extends State<CreateContentForm> {
         ),
         child: Text(
           'Add at least one image to use as thumbnail.',
-          style:
-          GoogleFonts.outfit(fontSize: 11.5, color: AppColors.amber),
+          style: GoogleFonts.outfit(fontSize: 11.5, color: AppColors.amber),
         ),
       );
     }
@@ -2415,16 +3797,14 @@ class _CreateContentFormState extends State<CreateContentForm> {
           final entry = images[idx];
           final isSelected = _youTubeThumbnailIndex == entry.key;
           return GestureDetector(
-            onTap: () =>
-                setState(() => _youTubeThumbnailIndex = entry.key),
+            onTap: () => setState(() => _youTubeThumbnailIndex = entry.key),
             child: Container(
               width: 90,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(
-                  color: isSelected
-                      ? AppColors.purple
-                      : AppColors.borderLight,
+                  color:
+                  isSelected ? AppColors.purple : AppColors.borderLight,
                   width: isSelected ? 2 : 1,
                 ),
               ),
@@ -2433,7 +3813,7 @@ class _CreateContentFormState extends State<CreateContentForm> {
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
-                    Image.memory(entry.value.bytes, fit: BoxFit.cover),
+                    Image.memory(entry.value.bytes, fit: BoxFit.contain),
                     if (isSelected)
                       Container(
                         color: AppColors.purple.withOpacity(0.25),
@@ -2452,12 +3832,8 @@ class _CreateContentFormState extends State<CreateContentForm> {
     );
   }
 
-  // ── Open preview
   void _openPreview() {
-    if (!_formKey.currentState!.validate() &&
-        !_hideTitleField) {
-      return;
-    }
+    if (!_formKey.currentState!.validate() && !_hideTitleField) return;
     if (_selectedClient == null || _selectedPlatform == null) return;
     if (_mediaList.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -2488,14 +3864,12 @@ class _CreateContentFormState extends State<CreateContentForm> {
     setState(() => _showPreview = true);
   }
 
-  // ── PREVIEW SCREEN (platform-specific)
   Widget _buildPreviewScreen() {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Header
           Row(
             children: [
               IconButton(
@@ -2517,13 +3891,8 @@ class _CreateContentFormState extends State<CreateContentForm> {
             ],
           ),
           const SizedBox(height: 12),
-
-          // Platform-specific preview
           _buildPlatformPreview(),
-
           const SizedBox(height: 20),
-
-          // Summary row (schedule at)
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
@@ -2531,25 +3900,57 @@ class _CreateContentFormState extends State<CreateContentForm> {
               borderRadius: BorderRadius.circular(14),
               border: Border.all(color: AppColors.borderLight),
             ),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.schedule_rounded,
-                    color: AppColors.cyan, size: 18),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    'Scheduled at: ${_scheduledDate.day}/${_scheduledDate.month}/${_scheduledDate.year} • ${_scheduledTime.format(context)}',
-                    style: GoogleFonts.outfit(
-                        fontSize: 12.5, color: AppColors.textDarkSoft),
-                  ),
+                Row(
+                  children: [
+                    const Icon(Icons.schedule_rounded,
+                        color: AppColors.cyan, size: 18),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Scheduled at: ${DateFormat('dd/MM/yyyy').format(_scheduledDate)} • ${_scheduledTime.format(context)}',
+                        style: GoogleFonts.outfit(
+                            fontSize: 12.5, color: AppColors.textDarkSoft),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    const Icon(Icons.person_outline_rounded,
+                        color: AppColors.purple, size: 18),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Owner: ${_owner.text.trim().isEmpty ? 'Admin' : _owner.text.trim()}',
+                        style: GoogleFonts.outfit(
+                            fontSize: 12.5, color: AppColors.textDarkSoft),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Icon(Icons.circle,
+                        color: clientStatusColor(_status), size: 12),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Status: ${clientStatusLabel(_status)}',
+                        style: GoogleFonts.outfit(
+                            fontSize: 12.5, color: AppColors.textDarkSoft),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
           ),
-
           const SizedBox(height: 20),
-
-          // Actions
           Row(
             children: [
               Expanded(
@@ -2559,8 +3960,7 @@ class _CreateContentFormState extends State<CreateContentForm> {
                       size: 16, color: AppColors.textDark),
                   label: Text(
                     'Edit',
-                    style:
-                    GoogleFonts.outfit(color: AppColors.textDark),
+                    style: GoogleFonts.outfit(color: AppColors.textDark),
                   ),
                   style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 14),
@@ -2602,7 +4002,6 @@ class _CreateContentFormState extends State<CreateContentForm> {
     );
   }
 
-  // ── Platform-specific preview builder
   Widget _buildPlatformPreview() {
     if (_isInstagram) return _instagramPreview();
     if (_isFacebook) return _facebookPreview();
@@ -2612,7 +4011,6 @@ class _CreateContentFormState extends State<CreateContentForm> {
     return _genericPreview();
   }
 
-  // ── Instagram preview (multi-image carousel, no title)
   Widget _instagramPreview() {
     return Container(
       decoration: BoxDecoration(
@@ -2623,7 +4021,6 @@ class _CreateContentFormState extends State<CreateContentForm> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Header row
           Padding(
             padding: const EdgeInsets.all(12),
             child: Row(
@@ -2679,12 +4076,7 @@ class _CreateContentFormState extends State<CreateContentForm> {
               ],
             ),
           ),
-          // Media carousel
-          _mediaPreviewCarousel(
-            height: 380,
-            aspectRatio: _aspectRatioFor(_selectedPlatform, _contentType),
-          ),
-          // Indicator dots
+          _mediaPreviewCarousel(height: 420),
           if (_mediaList.length > 1)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 8),
@@ -2704,7 +4096,6 @@ class _CreateContentFormState extends State<CreateContentForm> {
                 ),
               ),
             ),
-          // Action row
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: Row(
@@ -2722,7 +4113,6 @@ class _CreateContentFormState extends State<CreateContentForm> {
               ],
             ),
           ),
-          // Caption
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 10, 12, 14),
             child: Text(
@@ -2736,7 +4126,6 @@ class _CreateContentFormState extends State<CreateContentForm> {
     );
   }
 
-  // ── Facebook preview (no title)
   Widget _facebookPreview() {
     return Container(
       decoration: BoxDecoration(
@@ -2761,7 +4150,7 @@ class _CreateContentFormState extends State<CreateContentForm> {
                 Container(
                   width: 40,
                   height: 40,
-                  decoration: BoxDecoration(
+                  decoration: const BoxDecoration(
                     shape: BoxShape.circle,
                     color: AppColors.facebook,
                   ),
@@ -2801,10 +4190,7 @@ class _CreateContentFormState extends State<CreateContentForm> {
               ],
             ),
           ),
-          _mediaPreviewCarousel(
-            height: 340,
-            aspectRatio: _aspectRatioFor(_selectedPlatform, _contentType),
-          ),
+          _mediaPreviewCarousel(height: 380),
           Padding(
             padding: const EdgeInsets.all(12),
             child: Text(
@@ -2845,7 +4231,6 @@ class _CreateContentFormState extends State<CreateContentForm> {
     );
   }
 
-  // ── Threads preview
   Widget _threadsPreview() {
     return Container(
       padding: const EdgeInsets.all(14),
@@ -2888,11 +4273,9 @@ class _CreateContentFormState extends State<CreateContentForm> {
                   ),
                 ),
               ),
-              Text(
-                '2m',
-                style: GoogleFonts.outfit(
-                    fontSize: 11, color: AppColors.textDarkMuted),
-              ),
+              Text('2m',
+                  style: GoogleFonts.outfit(
+                      fontSize: 11, color: AppColors.textDarkMuted)),
             ],
           ),
           const SizedBox(height: 10),
@@ -2902,10 +4285,7 @@ class _CreateContentFormState extends State<CreateContentForm> {
                 color: AppColors.textDark, fontSize: 12.5, height: 1.4),
           ),
           const SizedBox(height: 10),
-          _mediaPreviewCarousel(
-            height: 280,
-            aspectRatio: 4 / 5,
-          ),
+          _mediaPreviewCarousel(height: 320),
           const SizedBox(height: 10),
           Row(
             children: const [
@@ -2939,7 +4319,6 @@ class _CreateContentFormState extends State<CreateContentForm> {
     );
   }
 
-  // ── YouTube preview (thumbnail-based)
   Widget _youTubePreview() {
     final thumbIndex = _youTubeThumbnailIndex;
     final thumbBytes = (thumbIndex != null &&
@@ -2960,7 +4339,6 @@ class _CreateContentFormState extends State<CreateContentForm> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Thumbnail
           AspectRatio(
             aspectRatio: 16 / 9,
             child: Stack(
@@ -2969,7 +4347,7 @@ class _CreateContentFormState extends State<CreateContentForm> {
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(12),
                     child: thumbBytes != null
-                        ? Image.memory(thumbBytes, fit: BoxFit.cover)
+                        ? Image.memory(thumbBytes, fit: BoxFit.contain)
                         : Container(
                       color: Colors.black,
                       child: const Center(
@@ -3074,7 +4452,6 @@ class _CreateContentFormState extends State<CreateContentForm> {
     );
   }
 
-  // ── LinkedIn preview
   Widget _linkedInPreview() {
     return Container(
       decoration: BoxDecoration(
@@ -3143,10 +4520,7 @@ class _CreateContentFormState extends State<CreateContentForm> {
               ),
             ),
           const SizedBox(height: 8),
-          _mediaPreviewCarousel(
-            height: 320,
-            aspectRatio: _aspectRatioFor(_selectedPlatform, _contentType),
-          ),
+          _mediaPreviewCarousel(height: 360),
           Padding(
             padding: const EdgeInsets.all(12),
             child: Text(
@@ -3177,7 +4551,6 @@ class _CreateContentFormState extends State<CreateContentForm> {
     );
   }
 
-  // ── Generic preview (fallback)
   Widget _genericPreview() {
     return Container(
       padding: const EdgeInsets.all(14),
@@ -3198,10 +4571,7 @@ class _CreateContentFormState extends State<CreateContentForm> {
             ),
           ),
           const SizedBox(height: 8),
-          _mediaPreviewCarousel(
-            height: 300,
-            aspectRatio: _aspectRatioFor(_selectedPlatform, _contentType),
-          ),
+          _mediaPreviewCarousel(height: 340),
           const SizedBox(height: 10),
           Text(
             _caption.text.trim(),
@@ -3213,35 +4583,32 @@ class _CreateContentFormState extends State<CreateContentForm> {
     );
   }
 
-  // ── PageView carousel of selected media for preview
-  Widget _mediaPreviewCarousel({
-    required double height,
-    required double aspectRatio,
-  }) {
-    final controller = PageController();
+  Widget _mediaPreviewCarousel({required double height}) {
     return SizedBox(
       height: height,
       child: PageView.builder(
-        controller: controller,
         itemCount: _mediaList.length,
         itemBuilder: (context, i) {
           final m = _mediaList[i];
           return Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: m.isVideo
-                  ? Container(
+            child: Container(
+              decoration: BoxDecoration(
                 color: Colors.black,
-                child: Column(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: m.isVideo
+                    ? Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     const Icon(Icons.play_circle_fill_rounded,
                         color: AppColors.cyan, size: 64),
                     const SizedBox(height: 8),
                     Padding(
-                      padding:
-                      const EdgeInsets.symmetric(horizontal: 12),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12),
                       child: Text(
                         m.fileName,
                         textAlign: TextAlign.center,
@@ -3254,12 +4621,19 @@ class _CreateContentFormState extends State<CreateContentForm> {
                       ),
                     ),
                   ],
+                )
+                    : InteractiveViewer(
+                  minScale: 1.0,
+                  maxScale: 3.0,
+                  child: Center(
+                    child: Image.memory(
+                      m.bytes,
+                      fit: BoxFit.contain,
+                      width: double.infinity,
+                      height: double.infinity,
+                    ),
+                  ),
                 ),
-              )
-                  : Image.memory(
-                m.bytes,
-                fit: BoxFit.cover,
-                width: double.infinity,
               ),
             ),
           );
@@ -3273,7 +4647,6 @@ class _CreateContentFormState extends State<CreateContentForm> {
     return n.isNotEmpty ? n[0].toUpperCase() : '?';
   }
 
-  // ── Confirm & schedule
   void _confirmSchedule() {
     final finalDate = DateTime(
       _scheduledDate.year,
@@ -3287,7 +4660,6 @@ class _CreateContentFormState extends State<CreateContentForm> {
       orElse: () => kSocialPlatforms.first,
     );
 
-    // Use first media's bytes as cover for the ScheduledPost model.
     final cover = _mediaList.isNotEmpty ? _mediaList.first.bytes : null;
 
     widget.onSave(ScheduledPost(
@@ -3303,11 +4675,44 @@ class _CreateContentFormState extends State<CreateContentForm> {
       scheduledAt: finalDate,
       color: platform.color,
       imageBytes: cover,
+      status: _status,
+      ownerName: _owner.text.trim().isEmpty ? 'Admin' : _owner.text.trim(),
     ));
   }
 }
 
-// ── Small helper for LinkedIn action row
+// ── Public status helpers
+Color clientStatusColor(PostStatus s) {
+  switch (s) {
+    case PostStatus.draft:
+      return AppColors.textDarkMuted;
+    case PostStatus.pendingApproval:
+      return AppColors.amber;
+    case PostStatus.scheduled:
+      return AppColors.cyan;
+    case PostStatus.live:
+      return AppColors.green;
+    case PostStatus.failed:
+      return AppColors.red;
+  }
+}
+
+String clientStatusLabel(PostStatus s) {
+  switch (s) {
+    case PostStatus.draft:
+      return 'Draft';
+    case PostStatus.pendingApproval:
+      return 'Pending Approval';
+    case PostStatus.scheduled:
+      return 'Scheduled';
+    case PostStatus.live:
+      return 'Live';
+    case PostStatus.failed:
+      return 'Failed';
+  }
+}
+
+// ── LinkedIn action row helper
 class _LinkedInAction extends StatelessWidget {
   final IconData icon;
   final String label;

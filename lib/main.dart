@@ -1,3 +1,4 @@
+// main.dart
 import 'dart:convert';
 import 'dart:io' show Platform;
 
@@ -6,15 +7,10 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:socialee_sphere/login.dart';
+import 'package:socialee_sphere/dashboard.dart'; // Ensure your dashboard is imported
 
 /// ─────────────────────────────────────────────────────────────────────────────
 /// Platform-aware base URL.
-///
-/// • Web (Chrome/Edge/Firefox)   → localhost
-/// • Windows / macOS / Linux     → localhost
-/// • iOS simulator               → localhost
-/// • Android emulator            → 10.0.2.2
-/// • Physical device             → override kManualBaseUrl with your LAN IP
 /// ─────────────────────────────────────────────────────────────────────────────
 const String kManualBaseUrl = ""; // e.g. "http://192.168.1.10/socialee_sphere"
 
@@ -25,14 +21,13 @@ String get kBaseUrl {
 
   try {
     if (Platform.isAndroid) {
-      // Android emulator maps host machine to 10.0.2.2
-      return "http://192.168.1.17/socialee_sphere";
+      return "http://10.0.2.2/socialee_sphere";
     }
   } catch (_) {
-    // Platform not available (e.g. Web) — ignore
+    // Platform not available — ignore
   }
 
-  // iOS, Windows, macOS, Linux
+  // Windows, macOS, Linux, iOS
   return "http://localhost/socialee_sphere";
 }
 
@@ -62,9 +57,9 @@ class MyApp extends StatelessWidget {
 
 /// ─────────────────────────────────────────────────────────────────────────────
 /// AutoLoginGate
-///  1. Reads saved agency credentials (SharedPreferences / localStorage).
+///  1. Reads saved credentials (SharedPreferences / browser localStorage).
 ///  2. Re-validates them against login.php.
-///  3. Routes to AgencyHomeScreen on success, LogIN otherwise.
+///  3. Routes to Dashboard on success, LogIN otherwise.
 /// ─────────────────────────────────────────────────────────────────────────────
 class AutoLoginGate extends StatefulWidget {
   const AutoLoginGate({super.key});
@@ -86,7 +81,7 @@ class _AutoLoginGateState extends State<AutoLoginGate> {
     final savedEmail = prefs.getString('agency_email');
     final savedPassword = prefs.getString('agency_password');
 
-    // No saved credentials → login screen
+    // No saved credentials → route directly to login screen
     if (savedEmail == null ||
         savedEmail.isEmpty ||
         savedPassword == null ||
@@ -110,7 +105,6 @@ class _AutoLoginGateState extends State<AutoLoginGate> {
       )
           .timeout(const Duration(seconds: 12));
 
-      // Safe JSON parsing
       Map<String, dynamic> body;
       try {
         body = jsonDecode(response.body) as Map<String, dynamic>;
@@ -122,19 +116,20 @@ class _AutoLoginGateState extends State<AutoLoginGate> {
       if (response.statusCode == 200 && body['status'] == true) {
         final agency = (body['data'] as Map).cast<String, dynamic>();
 
+        // Update stored session data if needed
         await prefs.setInt('agency_id', (agency['id'] as num?)?.toInt() ?? 0);
         await prefs.setString('agency_name', agency['agency_name'] ?? '');
         await prefs.setString('owner_name', agency['owner_name'] ?? '');
         await prefs.setString('agency_email', agency['email'] ?? savedEmail);
 
-        _goToHome(agency);
+        _goToDashboard();
       } else {
-        // Invalid / unverified → wipe credentials
+        // Invalid or expired credentials → wipe session and prompt login
         await _clearSession(prefs);
         _goToLogin();
       }
     } catch (_) {
-      // Network error → keep credentials, fall back to login
+      // Network failure or backend timeout → fallback to login safely
       _goToLogin();
     }
   }
@@ -150,20 +145,21 @@ class _AutoLoginGateState extends State<AutoLoginGate> {
   void _goToLogin() {
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => LogIN()),
+      MaterialPageRoute(builder: (_) => const LogIN()),
     );
   }
 
-  void _goToHome(Map<String, dynamic> agency) {
+  void _goToDashboard() {
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => AgencyHomeScreen(agency: agency)),
+      MaterialPageRoute(builder: (_) => const Dashboard()),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     return const Scaffold(
+      backgroundColor: Color(0xFF0B0F1E),
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -171,69 +167,21 @@ class _AutoLoginGateState extends State<AutoLoginGate> {
             SizedBox(
               width: 42,
               height: 42,
-              child: CircularProgressIndicator(strokeWidth: 3),
+              child: CircularProgressIndicator(
+                color: Color(0xFF00F0FF),
+                strokeWidth: 3,
+              ),
             ),
             SizedBox(height: 18),
             Text(
               "Checking session...",
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+              style: TextStyle(
+                color: Colors.white70,
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-/// ─────────────────────────────────────────────────────────────────────────────
-/// Placeholder home screen — replace with your real agency dashboard.
-/// ─────────────────────────────────────────────────────────────────────────────
-class AgencyHomeScreen extends StatelessWidget {
-  final Map<String, dynamic> agency;
-  const AgencyHomeScreen({super.key, required this.agency});
-
-  Future<void> _logout(BuildContext context) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.clear();
-    if (!context.mounted) return;
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => LogIN()),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text("Agency Dashboard"),
-        actions: [
-          IconButton(
-            tooltip: 'Logout',
-            icon: const Icon(Icons.logout),
-            onPressed: () => _logout(context),
-          ),
-        ],
-      ),
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.business_rounded, size: 56),
-              const SizedBox(height: 16),
-              Text(
-                "Welcome, ${agency['owner_name'] ?? 'Owner'}",
-                style: const TextStyle(
-                    fontSize: 18, fontWeight: FontWeight.w700),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-              Text("Agency: ${agency['agency_name'] ?? ''}"),
-              const SizedBox(height: 4),
-              Text("Email: ${agency['email'] ?? ''}"),
-            ],
-          ),
         ),
       ),
     );

@@ -156,6 +156,17 @@ class ClientModel {
   });
 }
 
+// Add inside dashboard_shared.dart
+
+enum PostStatus {
+  draft,
+  pendingApproval,
+  scheduled,
+  live,
+  failed,
+}
+
+// Update ScheduledPost to include status + ownerName:
 class ScheduledPost {
   final String title;
   final String caption;
@@ -165,6 +176,8 @@ class ScheduledPost {
   final DateTime scheduledAt;
   final Color color;
   final Uint8List? imageBytes;
+  final PostStatus status;
+  final String ownerName;
 
   ScheduledPost({
     required this.title,
@@ -175,6 +188,8 @@ class ScheduledPost {
     required this.scheduledAt,
     required this.color,
     this.imageBytes,
+    this.status = PostStatus.scheduled,
+    this.ownerName = 'Admin',
   });
 }
 
