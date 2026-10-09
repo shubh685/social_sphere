@@ -16,6 +16,7 @@ class Dashboard extends StatefulWidget {
 class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
   int _selectedIndex = 0;
   bool _sidebarCollapsed = false;
+  String? _allPlatformsClientFilter;
   String _activeSubSection = '';
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
@@ -63,7 +64,6 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
       isExpandable: true,
       key: 'social',
       children: [
-        SubItemModel(icon: Icons.add_link_rounded, label: 'Add Handles'),
         SubItemModel(icon: Icons.apps_rounded, label: 'All Platforms'),
       ],
     ),
@@ -2131,16 +2131,17 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
   }
 
   // ═══════════════════════════════════════════════════════════════════════
-  // ALL PLATFORMS — combined responsive list of every connected account
-  // ═══════════════════════════════════════════════════════════════════════
+// ALL PLATFORMS — combined responsive list of every connected account
+// with a client filter (All Clients / specific client)
+// ═══════════════════════════════════════════════════════════════════════
   Widget _buildAllPlatformsScreen() {
-    // Build a flat list: one entry per (client, platform) pair.
-    final entries = <_ConnectedAccountEntry>[];
+    // Build a flat list: one entry per (client, platform) pair
+    final allEntries = <_ConnectedAccountEntry>[];
     for (final c in _clients) {
       for (final p in kSocialPlatforms) {
         final handle = c.socialHandles[p.name];
         if (handle != null && handle.isNotEmpty) {
-          entries.add(_ConnectedAccountEntry(
+          allEntries.add(_ConnectedAccountEntry(
             client: c,
             platform: p,
             handle: handle,
@@ -2150,14 +2151,25 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
       }
     }
 
+    // Apply client filter
+    final entries = _allPlatformsClientFilter == null
+        ? allEntries
+        : allEntries
+        .where((e) => e.client.companyName == _allPlatformsClientFilter)
+        .toList();
+
     return _scrollWrapper(children: [
       buildSectionTitle('All Connected Platforms (${entries.length})'),
       const SizedBox(height: 4),
       Text(
-        'Every social account linked across all clients, in one responsive list.',
+        'Every social account linked across all clients — filter by client to focus.',
         style: GoogleFonts.outfit(
             fontSize: 11.5, color: AppColors.textDarkMuted),
       ),
+      const SizedBox(height: 12),
+
+      // ── Client filter row
+      _clientFilterRow(),
       const SizedBox(height: 12),
 
       // ── Compact stats summary strip
@@ -2167,9 +2179,12 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
       if (entries.isEmpty)
         buildEmptyState(
           icon: Icons.link_off_rounded,
-          title: 'No connected platforms yet',
-          subtitle:
-          'Use Social Accounts → Add Handles to link a client\'s accounts.',
+          title: _allPlatformsClientFilter == null
+              ? 'No connected platforms yet'
+              : 'No platforms for this client',
+          subtitle: _allPlatformsClientFilter == null
+              ? 'Use Social Accounts → Add Handles to link a client\'s accounts.'
+              : 'Add handles for ${_allPlatformsClientFilter!} from Add Handles.',
         )
       else
       // ── Responsive list (1 col on mobile, 2 col on tablet, 3 col on desktop)
@@ -2194,7 +2209,6 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
               );
             }
 
-            // Use a grid for 2/3 columns
             return GridView.builder(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
@@ -2202,7 +2216,6 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
                 crossAxisCount: columns,
                 crossAxisSpacing: 12,
                 mainAxisSpacing: 12,
-                // ~ 150 px card height; adjust based on width so it stays tidy
                 childAspectRatio: columns == 2 ? 2.6 : 2.8,
               ),
               itemCount: entries.length,
@@ -2211,6 +2224,162 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
           },
         ),
     ]);
+  }
+
+// ── Client filter row (dropdown-style chips)
+  Widget _clientFilterRow() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.purple.withOpacity(0.3)),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.purple.withOpacity(0.06),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(10),
+              color: AppColors.purple.withOpacity(0.12),
+              border: Border.all(color: AppColors.purple.withOpacity(0.3)),
+            ),
+            child: const Icon(Icons.filter_alt_rounded,
+                size: 18, color: AppColors.purple),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Filter by Client',
+                  style: GoogleFonts.outfit(
+                      fontSize: 10.5, color: AppColors.textDarkMuted),
+                ),
+                const SizedBox(height: 2),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  physics: const BouncingScrollPhysics(),
+                  child: Row(
+                    children: [
+                      _clientFilterChip(
+                        label: 'All Clients',
+                        color: AppColors.purple,
+                        isSelected: _allPlatformsClientFilter == null,
+                        onTap: () => setState(
+                                () => _allPlatformsClientFilter = null),
+                      ),
+                      const SizedBox(width: 8),
+                      ..._clients.map((c) {
+                        final isSelected =
+                            _allPlatformsClientFilter == c.companyName;
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: _clientFilterChip(
+                            label: c.companyName,
+                            color: c.logoColor,
+                            isSelected: isSelected,
+                            onTap: () => setState(() =>
+                            _allPlatformsClientFilter = c.companyName),
+                          ),
+                        );
+                      }),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Clear (X) button, shown only when a filter is applied
+          if (_allPlatformsClientFilter != null)
+            Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: () =>
+                    setState(() => _allPlatformsClientFilter = null),
+                borderRadius: BorderRadius.circular(50),
+                child: Container(
+                  width: 28,
+                  height: 28,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: AppColors.scaffoldLight,
+                    border: Border.all(color: AppColors.borderLight),
+                  ),
+                  child: const Icon(Icons.close_rounded,
+                      size: 14, color: AppColors.textDarkMuted),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _clientFilterChip({
+    required String label,
+    required Color color,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(50),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(50),
+            color: isSelected
+                ? color.withOpacity(0.14)
+                : AppColors.scaffoldLight,
+            border: Border.all(
+              color: isSelected ? color : AppColors.borderLight,
+              width: isSelected ? 1.4 : 1,
+            ),
+            boxShadow: isSelected
+                ? [
+              BoxShadow(
+                color: color.withOpacity(0.2),
+                blurRadius: 8,
+                offset: const Offset(0, 3),
+              ),
+            ]
+                : null,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (isSelected) ...[
+                Icon(Icons.check_circle_rounded, size: 12, color: color),
+                const SizedBox(width: 5),
+              ],
+              Text(
+                label,
+                style: GoogleFonts.outfit(
+                  fontSize: 11.5,
+                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+                  color:
+                  isSelected ? color : AppColors.textDarkSoft,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _allPlatformsSummary(List<_ConnectedAccountEntry> entries) {

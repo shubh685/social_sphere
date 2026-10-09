@@ -3083,3 +3083,313 @@ class _CreateContentFormState extends State<CreateContentForm> {
     );
   }
 }
+
+// ═════════════════════════════════════════════════════════════════════════════
+// ANALYTICS DATE RANGE BOTTOM SHEET
+// Preset ranges (7/30/90 days) + Custom Range with start/end date pickers.
+// ═════════════════════════════════════════════════════════════════════════════
+Future<DateRangeSelection?> showAnalyticsDateRangeSheet({
+  required BuildContext context,
+  required DateRangeSelection current,
+}) {
+  return showModalBottomSheet<DateRangeSelection>(
+    context: context,
+    backgroundColor: Colors.white,
+    isScrollControlled: true,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
+    builder: (ctx) => _AnalyticsDateRangeSheet(current: current),
+  );
+}
+
+class _AnalyticsDateRangeSheet extends StatefulWidget {
+  final DateRangeSelection current;
+  const _AnalyticsDateRangeSheet({required this.current});
+
+  @override
+  State<_AnalyticsDateRangeSheet> createState() =>
+      _AnalyticsDateRangeSheetState();
+}
+
+class _AnalyticsDateRangeSheetState extends State<_AnalyticsDateRangeSheet> {
+  late DateTime _customStart;
+  late DateTime _customEnd;
+
+  @override
+  void initState() {
+    super.initState();
+    _customStart = widget.current.startDate;
+    _customEnd = widget.current.endDate;
+  }
+
+  Future<void> _pickStart() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _customStart,
+      firstDate: DateTime(2020),
+      lastDate: _customEnd,
+    );
+    if (picked != null) {
+      setState(() {
+        _customStart = picked;
+        if (_customEnd.isBefore(_customStart)) _customEnd = _customStart;
+      });
+    }
+  }
+
+  Future<void> _pickEnd() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _customEnd,
+      firstDate: _customStart,
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+    );
+    if (picked != null) {
+      setState(() => _customEnd = picked);
+    }
+  }
+
+  String _fmt(DateTime d) =>
+      '${d.day.toString().padLeft(2, '0')} '
+          '${monthName(d.month)} ${d.year}';
+
+  @override
+  Widget build(BuildContext context) {
+    final now = DateTime.now();
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.only(
+          left: 16,
+          right: 16,
+          top: 16,
+          bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+        ),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // ── Handle
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: AppColors.borderLight,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+
+              // ── Title
+              Text(
+                'Select Reporting Period',
+                style: GoogleFonts.bricolageGrotesque(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.textDark,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Pick a preset or choose a custom date range.',
+                style: GoogleFonts.outfit(
+                    fontSize: 11.5, color: AppColors.textDarkMuted),
+              ),
+              const SizedBox(height: 14),
+
+              // ── Presets
+              _presetTile(context, 'Last 7 Days', 7, now),
+              _presetTile(context, 'Last 30 Days', 30, now),
+              _presetTile(context, 'Last 90 Days', 90, now),
+
+              const SizedBox(height: 8),
+              const Divider(height: 1, color: AppColors.borderLight),
+              const SizedBox(height: 12),
+
+              // ── Custom Range header
+              Row(
+                children: [
+                  Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(10),
+                      color: AppColors.purple.withOpacity(0.12),
+                    ),
+                    child: const Icon(Icons.tune_rounded,
+                        color: AppColors.purple, size: 20),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Custom Range',
+                          style: GoogleFonts.outfit(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.textDark,
+                          ),
+                        ),
+                        Text(
+                          'Choose your own start & end dates.',
+                          style: GoogleFonts.outfit(
+                              fontSize: 11,
+                              color: AppColors.textDarkMuted),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+
+              // ── Custom date pickers
+              Row(
+                children: [
+                  Expanded(
+                    child: _dateField(
+                      label: 'Start Date',
+                      value: _fmt(_customStart),
+                      icon: Icons.event_rounded,
+                      onTap: _pickStart,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _dateField(
+                      label: 'End Date',
+                      value: _fmt(_customEnd),
+                      icon: Icons.event_available_rounded,
+                      onTap: _pickEnd,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+
+              // ── Apply button
+              ElevatedButton.icon(
+                onPressed: () {
+                  final start = DateTime(
+                      _customStart.year, _customStart.month, _customStart.day);
+                  final end = DateTime(
+                      _customEnd.year, _customEnd.month, _customEnd.day);
+                  Navigator.of(context).pop(DateRangeSelection(
+                    startDate: start,
+                    endDate: end,
+                    label:
+                    '${_fmt(start)} → ${_fmt(end)}',
+                  ));
+                },
+                icon: const Icon(Icons.check_rounded,
+                    size: 16, color: Colors.white),
+                label: Text(
+                  'Apply Custom Range',
+                  style: GoogleFonts.outfit(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                  ),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.purple,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  elevation: 0,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _presetTile(
+      BuildContext ctx, String label, int days, DateTime now) {
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: Container(
+        width: 38,
+        height: 38,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(10),
+          color: AppColors.cyan.withOpacity(0.12),
+        ),
+        child: const Icon(Icons.schedule_rounded,
+            color: AppColors.cyan, size: 20),
+      ),
+      title: Text(
+        label,
+        style: GoogleFonts.outfit(
+          fontSize: 13.5,
+          fontWeight: FontWeight.w700,
+          color: AppColors.textDark,
+        ),
+      ),
+      onTap: () {
+        Navigator.of(ctx).pop(DateRangeSelection(
+          startDate: now.subtract(Duration(days: days)),
+          endDate: now,
+          label: label,
+        ));
+      },
+    );
+  }
+
+  Widget _dateField({
+    required String label,
+    required String value,
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding:
+        const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: AppColors.scaffoldLight,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.borderLight),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style: GoogleFonts.outfit(
+                  fontSize: 10, color: AppColors.textDarkMuted),
+            ),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Icon(icon, size: 14, color: AppColors.purple),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    value,
+                    style: GoogleFonts.outfit(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textDark,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
