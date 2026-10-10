@@ -87,7 +87,7 @@ class DashboardState extends State<Dashboard> {
     });
   }
 
-  // ── FETCH CLIENTS (GET API & FALLBACK) ───────────────────────────────────
+  // ── FETCH CLIENTS ────────────────────────────────────────────────────────
   Future<void> _fetchClientsFromApi() async {
     if (!mounted) return;
     setState(() {
@@ -221,7 +221,7 @@ class DashboardState extends State<Dashboard> {
     }
   }
 
-  // ── SAVE CLIENT (POST API) ────────────────────────────────────────────────
+  // ── SAVE CLIENT ──────────────────────────────────────────────────────────
   Future<bool> _saveClientToApi(ClientModel client) async {
     final url = Uri.parse('$_apiBase/register_company.php');
 
@@ -333,11 +333,6 @@ class DashboardState extends State<Dashboard> {
   }
 
   @override
-  void dispose() {
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
     final isMobile = size.width < 768;
@@ -372,7 +367,7 @@ class DashboardState extends State<Dashboard> {
                   ),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(20),
-                    child: _buildSidebar(isMobile: false, isTablet: isTablet),
+                    child: _buildSidebar(isTablet: isTablet),
                   ),
                 ),
               ),
@@ -391,7 +386,7 @@ class DashboardState extends State<Dashboard> {
   }
 
   // ── SIDEBAR ──────────────────────────────────────────────────────────────
-  Widget _buildSidebar({required bool isMobile, required bool isTablet}) {
+  Widget _buildSidebar({required bool isTablet}) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final collapsed = constraints.maxWidth < 160;
@@ -463,9 +458,7 @@ class DashboardState extends State<Dashboard> {
   }
 
   Widget _buildSidebarBrand({bool forceExpanded = false}) {
-    final showExpanded = forceExpanded;
-
-    if (!showExpanded) {
+    if (!forceExpanded) {
       return Padding(
         padding: const EdgeInsets.fromLTRB(8, 16, 8, 8),
         child: Center(
@@ -761,12 +754,10 @@ class DashboardState extends State<Dashboard> {
   }
 
   Widget _buildSidebarFooter({bool forceExpanded = false}) {
-    final showExpanded = forceExpanded;
-
     return Padding(
-      padding: EdgeInsets.all(showExpanded ? 8 : 6),
+      padding: EdgeInsets.all(forceExpanded ? 8 : 6),
       child: Container(
-        padding: EdgeInsets.all(showExpanded ? 8 : 4),
+        padding: EdgeInsets.all(forceExpanded ? 8 : 4),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(14),
           gradient: LinearGradient(
@@ -778,23 +769,10 @@ class DashboardState extends State<Dashboard> {
           border: Border.all(
               color: AppColors.purple.withOpacity(0.2), width: 1),
         ),
-        child: showExpanded
+        child: forceExpanded
             ? Row(
           children: [
-            CircleAvatar(
-              radius: 14,
-              backgroundColor: AppColors.purple.withOpacity(0.3),
-              child: Text(
-                widget.agencyName.isNotEmpty
-                    ? widget.agencyName[0].toUpperCase()
-                    : 'AG',
-                style: GoogleFonts.outfit(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white,
-                ),
-              ),
-            ),
+            _buildAgencyAvatar(radius: 14, fontSize: 10),
             const SizedBox(width: 8),
             Expanded(
               child: Column(
@@ -825,21 +803,23 @@ class DashboardState extends State<Dashboard> {
             ),
           ],
         )
-            : Center(
-          child: CircleAvatar(
-            radius: 14,
-            backgroundColor: AppColors.purple.withOpacity(0.3),
-            child: Text(
-              widget.agencyName.isNotEmpty
-                  ? widget.agencyName[0].toUpperCase()
-                  : 'AG',
-              style: GoogleFonts.outfit(
-                fontSize: 10,
-                fontWeight: FontWeight.w700,
-                color: Colors.white,
-              ),
-            ),
-          ),
+            : Center(child: _buildAgencyAvatar(radius: 14, fontSize: 10)),
+      ),
+    );
+  }
+
+  Widget _buildAgencyAvatar({required double radius, required double fontSize}) {
+    return CircleAvatar(
+      radius: radius,
+      backgroundColor: AppColors.purple.withOpacity(0.3),
+      child: Text(
+        widget.agencyName.isNotEmpty
+            ? widget.agencyName[0].toUpperCase()
+            : 'AG',
+        style: GoogleFonts.outfit(
+          fontSize: fontSize,
+          fontWeight: FontWeight.w700,
+          color: Colors.white,
         ),
       ),
     );
@@ -1125,10 +1105,9 @@ class DashboardState extends State<Dashboard> {
                         ],
                       ),
                       child: ElevatedButton(
-                        onPressed: () => Navigator.pushReplacement(
-                          context,
-                          MaterialPageRoute(builder: (ctx) => const LogIN()),
-                        ),
+                        onPressed: () {
+                          Navigator.of(ctx).pop(true);
+                        },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.transparent,
                           shadowColor: Colors.transparent,
@@ -1158,7 +1137,9 @@ class DashboardState extends State<Dashboard> {
     );
 
     if (shouldLogout == true && mounted) {
-      Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => const LogIN()),
+      );
     }
   }
 
@@ -1200,30 +1181,43 @@ class DashboardState extends State<Dashboard> {
       const SizedBox(height: 20),
       buildSectionTitle('Quick Actions'),
       const SizedBox(height: 12),
-      Row(
-        children: [
-          Expanded(
-            child: _actionTile('Add Client',
-                Icons.person_add_alt_1_rounded, AppColors.purple, () {
+      LayoutBuilder(
+        builder: (context, c) {
+          final narrow = c.maxWidth < 600;
+          final tiles = [
+            _actionTile('Add Client', Icons.person_add_alt_1_rounded,
+                AppColors.purple, () {
                   setState(() {
                     _selectedIndex = 1;
                     _activeSubSection = 'Add Client';
                     _expandedMenus['clients'] = true;
                   });
                 }),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: _actionTile('Open Client Dashboard',
-                Icons.dashboard_customize_rounded, AppColors.cyan, () {
+            _actionTile('Open Client Dashboard', Icons.dashboard_customize_rounded,
+                AppColors.cyan, () {
                   setState(() {
                     _selectedIndex = 1;
                     _activeSubSection = 'Client List';
                     _expandedMenus['clients'] = true;
                   });
                 }),
-          ),
-        ],
+          ];
+          if (narrow) {
+            return Column(
+              children: tiles
+                  .map((w) =>
+                  Padding(padding: const EdgeInsets.only(bottom: 12), child: w))
+                  .toList(),
+            );
+          }
+          return Row(
+            children: [
+              Expanded(child: tiles[0]),
+              const SizedBox(width: 12),
+              Expanded(child: tiles[1]),
+            ],
+          );
+        },
       ),
     ]);
   }
@@ -1263,7 +1257,8 @@ class DashboardState extends State<Dashboard> {
                         style: GoogleFonts.outfit(
                             fontSize: 13,
                             fontWeight: FontWeight.w700,
-                            color: AppColors.textDark)),
+                            color: AppColors.textDark),
+                        overflow: TextOverflow.ellipsis),
                     Text('Tap to open',
                         style: GoogleFonts.outfit(
                             fontSize: 11, color: AppColors.textDarkMuted)),
@@ -1287,51 +1282,59 @@ class DashboardState extends State<Dashboard> {
           colors: [Color(0xFF0A0E27), Color(0xFF1E1B4B), Color(0xFF311042)],
         ),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text('Welcome back, ${widget.agencyName}! 👋',
-                    style: GoogleFonts.bricolageGrotesque(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white)),
-                const SizedBox(height: 6),
-                Text(
-                    'Manage your clients and social media publishing queue.',
-                    style: GoogleFonts.outfit(
-                        fontSize: 13, color: AppColors.textSecondary)),
-              ],
-            ),
-          ),
+          Text('Welcome back, ${widget.agencyName}! 👋',
+              style: GoogleFonts.bricolageGrotesque(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.white)),
+          const SizedBox(height: 6),
+          Text(
+              'Manage your clients and social media publishing queue.',
+              style: GoogleFonts.outfit(
+                  fontSize: 13, color: AppColors.textSecondary)),
         ],
       ),
     );
   }
 
   Widget _buildStatsRow() {
-    return SizedBox(
-      height: 96,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        children: [
+    return LayoutBuilder(
+      builder: (context, c) {
+        final narrow = c.maxWidth < 420;
+        final tiles = [
           _buildStatCard('Clients', '${_clients.length}',
               Icons.people_alt_rounded, AppColors.purple),
-          const SizedBox(width: 12),
           _buildStatCard('Scheduled', '${_scheduledPosts.length}',
               Icons.schedule_rounded, AppColors.cyan),
-        ],
-      ),
+        ];
+        if (narrow) {
+          return Column(
+            children: tiles
+                .map((w) => Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: w,
+            ))
+                .toList(),
+          );
+        }
+        return Row(
+          children: [
+            Expanded(child: tiles[0]),
+            const SizedBox(width: 12),
+            Expanded(child: tiles[1]),
+          ],
+        );
+      },
     );
   }
 
   Widget _buildStatCard(
       String label, String value, IconData icon, Color color) {
     return Container(
-      width: 160,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -1376,9 +1379,8 @@ class DashboardState extends State<Dashboard> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              buildSectionTitle('Client List (${_clients.length})'),
+              Expanded(child: buildSectionTitle('Client List (${_clients.length})')),
               TextButton.icon(
                 onPressed: () => setState(() {
                   _activeSubSection = 'Add Client';
@@ -2106,6 +2108,7 @@ class DashboardState extends State<Dashboard> {
                       fontWeight: FontWeight.w700,
                       color: AppColors.textDark,
                     ),
+                    overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 2),
                   Text(
@@ -2115,6 +2118,7 @@ class DashboardState extends State<Dashboard> {
                       fontWeight: FontWeight.w600,
                       color: e.platform.color,
                     ),
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ),

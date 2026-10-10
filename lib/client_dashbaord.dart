@@ -1,4 +1,4 @@
-// client_dashbaord.dart  (FULL FIXED VERSION — no animations, all rendering errors resolved)
+// client_dashbaord.dart
 import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
@@ -11,7 +11,6 @@ import 'package:printing/printing.dart';
 import 'analytics_dashboard.dart';
 import 'dashboard_shared.dart';
 
-/// Dedicated dashboard for a single client, opened from the Client List.
 class ClientDashboard extends StatefulWidget {
   final ClientModel client;
   final List<ScheduledPost> scheduledPosts;
@@ -51,11 +50,9 @@ class _ClientDashboardState extends State<ClientDashboard> {
 
   final List<ScheduledPost> _localScheduled = [];
 
-  /// Live engagement data per post ID (simulated API)
   final Map<String, LiveEngagement> _liveEngagement = {};
   Timer? _liveUpdateTimer;
 
-  /// Tracks which posts are expanded in queue/calendar view
   final Set<String> _expandedPosts = {};
 
   DateRangeSelection _analyticsRange = DateRangeSelection(
@@ -149,7 +146,7 @@ class _ClientDashboardState extends State<ClientDashboard> {
         child: Column(
           children: [
             _buildClientTopBar(isMobile),
-            _buildTabsRow(isMobile),
+            _buildTabsRow(),
             const Divider(height: 1, color: AppColors.borderLight),
             Expanded(child: _buildTabContent()),
           ],
@@ -196,39 +193,7 @@ class _ClientDashboardState extends State<ClientDashboard> {
               ),
             ),
             const SizedBox(width: 10),
-            Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(11),
-                gradient: LinearGradient(
-                  colors: [
-                    widget.client.logoColor.withOpacity(0.4),
-                    widget.client.logoColor.withOpacity(0.15),
-                  ],
-                ),
-                border:
-                Border.all(color: widget.client.logoColor.withOpacity(0.5)),
-              ),
-              child: widget.client.logoBytes != null
-                  ? ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: Image.memory(widget.client.logoBytes!,
-                    fit: BoxFit.cover),
-              )
-                  : Center(
-                child: Text(
-                  widget.client.companyName.isNotEmpty
-                      ? widget.client.companyName[0].toUpperCase()
-                      : '?',
-                  style: GoogleFonts.bricolageGrotesque(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-            ),
+            _buildClientAvatar(),
             const SizedBox(width: 10),
             Expanded(
               child: Column(
@@ -284,7 +249,41 @@ class _ClientDashboardState extends State<ClientDashboard> {
     );
   }
 
-  Widget _buildTabsRow(bool isMobile) {
+  Widget _buildClientAvatar() {
+    return Container(
+      width: 42,
+      height: 42,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(11),
+        gradient: LinearGradient(
+          colors: [
+            widget.client.logoColor.withOpacity(0.4),
+            widget.client.logoColor.withOpacity(0.15),
+          ],
+        ),
+        border: Border.all(color: widget.client.logoColor.withOpacity(0.5)),
+      ),
+      child: widget.client.logoBytes != null
+          ? ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: Image.memory(widget.client.logoBytes!, fit: BoxFit.cover),
+      )
+          : Center(
+        child: Text(
+          widget.client.companyName.isNotEmpty
+              ? widget.client.companyName[0].toUpperCase()
+              : '?',
+          style: GoogleFonts.bricolageGrotesque(
+            fontSize: 16,
+            fontWeight: FontWeight.w800,
+            color: Colors.white,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTabsRow() {
     return SizedBox(
       height: 44,
       child: ListView.separated(
@@ -399,7 +398,7 @@ class _ClientDashboardState extends State<ClientDashboard> {
   }
 
   // ═════════════════════════════════════════════════════════════════════════
-  // EXPANDABLE POST CARD — static (no animation)
+  // EXPANDABLE POST CARD
   // ═════════════════════════════════════════════════════════════════════════
   Widget _buildLivePostCard(ScheduledPost post) {
     final id = _postId(post);
@@ -428,7 +427,6 @@ class _ClientDashboardState extends State<ClientDashboard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Header (always visible)
           Padding(
             padding: const EdgeInsets.all(14),
             child: Row(
@@ -473,145 +471,148 @@ class _ClientDashboardState extends State<ClientDashboard> {
                 ),
                 _buildStatusPill(statusLabel, statusColor),
                 const SizedBox(width: 6),
-                // ── Expand / Collapse chevron (static icon)
-                Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    onTap: () {
-                      setState(() {
-                        if (isExpanded) {
-                          _expandedPosts.remove(id);
-                        } else {
-                          _expandedPosts.add(id);
-                        }
-                      });
-                    },
-                    borderRadius: BorderRadius.circular(50),
-                    child: Container(
-                      width: 28,
-                      height: 28,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: AppColors.scaffoldLight,
-                        border: Border.all(
-                          color: isExpanded
-                              ? post.color.withOpacity(0.6)
-                              : AppColors.borderLight,
-                        ),
-                      ),
-                      child: Icon(
-                        isExpanded
-                            ? Icons.keyboard_arrow_up_rounded
-                            : Icons.keyboard_arrow_down_rounded,
-                        size: 18,
-                        color: isExpanded
-                            ? post.color
-                            : AppColors.textDarkMuted,
-                      ),
-                    ),
-                  ),
-                ),
+                _buildExpandChevron(post, id, isExpanded),
               ],
             ),
           ),
-
-          // ── Expandable body (simple if condition, no animation)
           if (isExpanded)
             Padding(
               padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (post.caption.isNotEmpty)
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: AppColors.scaffoldLight,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Text(
-                        post.caption,
-                        style: GoogleFonts.outfit(
-                          fontSize: 11.5,
-                          color: AppColors.textDarkSoft,
-                          height: 1.4,
-                        ),
-                      ),
-                    ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      const Icon(Icons.schedule_rounded,
-                          size: 13, color: AppColors.textDarkMuted),
-                      const SizedBox(width: 4),
-                      Text(
-                        DateFormat('dd MMM • HH:mm').format(post.scheduledAt),
-                        style: GoogleFonts.outfit(
-                            fontSize: 11, color: AppColors.textDarkMuted),
-                      ),
-                      const Spacer(),
-                      const Icon(Icons.person_outline_rounded,
-                          size: 13, color: AppColors.textDarkMuted),
-                      const SizedBox(width: 4),
-                      Text(
-                        post.ownerName,
-                        style: GoogleFonts.outfit(
-                            fontSize: 11, color: AppColors.textDarkMuted),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  const Divider(height: 1, color: AppColors.borderLight),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _LiveCounter(
-                          icon: Icons.favorite_rounded,
-                          label: 'Likes',
-                          value: live.likes,
-                          color: AppColors.pink,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: _LiveCounter(
-                          icon: Icons.chat_bubble_rounded,
-                          label: 'Comments',
-                          value: live.comments,
-                          color: AppColors.cyan,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: _LiveCounter(
-                          icon: Icons.share_rounded,
-                          label: 'Shares',
-                          value: live.shares,
-                          color: AppColors.green,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      const Icon(Icons.sync_rounded,
-                          size: 11, color: AppColors.textDarkMuted),
-                      const SizedBox(width: 4),
-                      Text(
-                        'Updated ${_timeAgo(live.lastUpdated)}',
-                        style: GoogleFonts.outfit(
-                            fontSize: 9.5, color: AppColors.textDarkMuted),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+              child: _buildExpandedBody(post, live),
             ),
         ],
       ),
+    );
+  }
+
+  Widget _buildExpandChevron(ScheduledPost post, String id, bool isExpanded) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () {
+          setState(() {
+            if (isExpanded) {
+              _expandedPosts.remove(id);
+            } else {
+              _expandedPosts.add(id);
+            }
+          });
+        },
+        borderRadius: BorderRadius.circular(50),
+        child: Container(
+          width: 28,
+          height: 28,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: AppColors.scaffoldLight,
+            border: Border.all(
+              color: isExpanded
+                  ? post.color.withOpacity(0.6)
+                  : AppColors.borderLight,
+            ),
+          ),
+          child: Icon(
+            isExpanded
+                ? Icons.keyboard_arrow_up_rounded
+                : Icons.keyboard_arrow_down_rounded,
+            size: 18,
+            color: isExpanded ? post.color : AppColors.textDarkMuted,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildExpandedBody(ScheduledPost post, LiveEngagement live) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (post.caption.isNotEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: AppColors.scaffoldLight,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              post.caption,
+              style: GoogleFonts.outfit(
+                fontSize: 11.5,
+                color: AppColors.textDarkSoft,
+                height: 1.4,
+              ),
+            ),
+          ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            const Icon(Icons.schedule_rounded,
+                size: 13, color: AppColors.textDarkMuted),
+            const SizedBox(width: 4),
+            Text(
+              DateFormat('dd MMM • HH:mm').format(post.scheduledAt),
+              style: GoogleFonts.outfit(
+                  fontSize: 11, color: AppColors.textDarkMuted),
+            ),
+            const Spacer(),
+            const Icon(Icons.person_outline_rounded,
+                size: 13, color: AppColors.textDarkMuted),
+            const SizedBox(width: 4),
+            Text(
+              post.ownerName,
+              style: GoogleFonts.outfit(
+                  fontSize: 11, color: AppColors.textDarkMuted),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        const Divider(height: 1, color: AppColors.borderLight),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: _LiveCounter(
+                icon: Icons.favorite_rounded,
+                label: 'Likes',
+                value: live.likes,
+                color: AppColors.pink,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _LiveCounter(
+                icon: Icons.chat_bubble_rounded,
+                label: 'Comments',
+                value: live.comments,
+                color: AppColors.cyan,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _LiveCounter(
+                icon: Icons.share_rounded,
+                label: 'Shares',
+                value: live.shares,
+                color: AppColors.green,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            const Icon(Icons.sync_rounded,
+                size: 11, color: AppColors.textDarkMuted),
+            const SizedBox(width: 4),
+            Text(
+              'Updated ${_timeAgo(live.lastUpdated)}',
+              style: GoogleFonts.outfit(
+                  fontSize: 9.5, color: AppColors.textDarkMuted),
+            ),
+          ],
+        ),
+      ],
     );
   }
 
@@ -1087,73 +1088,27 @@ class _ClientDashboardState extends State<ClientDashboard> {
         children: [
           buildSectionTitle('Workflow Snapshot'),
           const SizedBox(height: 12),
-          LayoutBuilder(
-            builder: (context, c) {
-              final narrow = c.maxWidth < 600;
-              final tiles = [
-                _snapTile('Drafts', '$draftCount', Icons.edit_note_rounded,
-                    AppColors.textDarkMuted),
-                _snapTile('Approvals', '$approvalCount',
-                    Icons.how_to_reg_rounded, AppColors.amber),
-                _snapTile('Scheduled', '$scheduledCount',
-                    Icons.schedule_rounded, AppColors.cyan),
-                _snapTile('Live', '$liveCount', Icons.public_rounded,
-                    AppColors.green),
-              ];
-              if (narrow) {
-                return Column(
-                  children: tiles
-                      .map((w) => Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: w,
-                  ))
-                      .toList(),
-                );
-              }
-              return Wrap(
-                spacing: 12,
-                runSpacing: 12,
-                children: tiles
-                    .map((w) =>
-                    SizedBox(width: (c.maxWidth - 12) / 2, child: w))
-                    .toList(),
-              );
-            },
-          ),
+          _buildTileGrid([
+            _snapTile('Drafts', '$draftCount', Icons.edit_note_rounded,
+                AppColors.textDarkMuted),
+            _snapTile('Approvals', '$approvalCount',
+                Icons.how_to_reg_rounded, AppColors.amber),
+            _snapTile('Scheduled', '$scheduledCount',
+                Icons.schedule_rounded, AppColors.cyan),
+            _snapTile('Live', '$liveCount', Icons.public_rounded,
+                AppColors.green),
+          ]),
           const SizedBox(height: 20),
           buildSectionTitle('Performance Snapshot'),
           const SizedBox(height: 12),
-          LayoutBuilder(
-            builder: (context, c) {
-              final narrow = c.maxWidth < 600;
-              final tiles = [
-                _snapTile('Published', '${widget.publishedPosts.length}',
-                    Icons.check_circle_rounded, AppColors.green),
-                _snapTile('Failed', '${widget.failedPosts.length}',
-                    Icons.error_rounded, AppColors.red),
-                _snapTile('Total Engagement', _fmtInt(totalEngagement),
-                    Icons.favorite_rounded, AppColors.pink),
-              ];
-              if (narrow) {
-                return Column(
-                  children: tiles
-                      .map((w) => Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: w,
-                  ))
-                      .toList(),
-                );
-              }
-              return Wrap(
-                spacing: 12,
-                runSpacing: 12,
-                children: tiles
-                    .map((w) =>
-                    SizedBox(width: (c.maxWidth - 12) / 2, child: w))
-                    .toList(),
-              );
-            },
-          ),
+          _buildTileGrid([
+            _snapTile('Published', '${widget.publishedPosts.length}',
+                Icons.check_circle_rounded, AppColors.green),
+            _snapTile('Failed', '${widget.failedPosts.length}',
+                Icons.error_rounded, AppColors.red),
+            _snapTile('Total Engagement', _fmtInt(totalEngagement),
+                Icons.favorite_rounded, AppColors.pink),
+          ]),
           const SizedBox(height: 20),
           buildSectionTitle('Client Info'),
           const SizedBox(height: 12),
@@ -1175,6 +1130,31 @@ class _ClientDashboardState extends State<ClientDashboard> {
             ..._localScheduled.take(3).map((p) => _buildLivePostCard(p)),
         ],
       ),
+    );
+  }
+
+  Widget _buildTileGrid(List<Widget> tiles) {
+    return LayoutBuilder(
+      builder: (context, c) {
+        final narrow = c.maxWidth < 600;
+        if (narrow) {
+          return Column(
+            children: tiles
+                .map((w) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: w,
+            ))
+                .toList(),
+          );
+        }
+        return Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: tiles
+              .map((w) => SizedBox(width: (c.maxWidth - 12) / 2, child: w))
+              .toList(),
+        );
+      },
     );
   }
 
@@ -1428,13 +1408,6 @@ class _ClientDashboardState extends State<ClientDashboard> {
         all.where((p) => p.status == PostStatus.scheduled).length;
     final live = all.where((p) => p.status == PostStatus.live).length;
 
-    final chips = [
-      _statusSummaryChip('Drafts', drafts, PostStatus.draft),
-      _statusSummaryChip('Approvals', approvals, PostStatus.pendingApproval),
-      _statusSummaryChip('Scheduled', scheduled, PostStatus.scheduled),
-      _statusSummaryChip('Live', live, PostStatus.live),
-    ];
-
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -1464,7 +1437,13 @@ class _ClientDashboardState extends State<ClientDashboard> {
           Wrap(
             spacing: 8,
             runSpacing: 8,
-            children: chips,
+            children: [
+              _statusSummaryChip('Drafts', drafts, PostStatus.draft),
+              _statusSummaryChip(
+                  'Approvals', approvals, PostStatus.pendingApproval),
+              _statusSummaryChip('Scheduled', scheduled, PostStatus.scheduled),
+              _statusSummaryChip('Live', live, PostStatus.live),
+            ],
           ),
         ],
       ),
@@ -1724,7 +1703,9 @@ class _ClientDashboardState extends State<ClientDashboard> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              'Platform wise',
+              _calendarPlatformFilter != null
+                  ? 'Platform · ${_calendarPlatformFilter!}'
+                  : 'Platform wise',
               style: GoogleFonts.outfit(
                 fontSize: 11.5,
                 fontWeight: _calendarPlatformFilter != null
@@ -1735,17 +1716,6 @@ class _ClientDashboardState extends State<ClientDashboard> {
                     : AppColors.textDarkSoft,
               ),
             ),
-            if (_calendarPlatformFilter != null) ...[
-              const SizedBox(width: 6),
-              Text(
-                '· ${_calendarPlatformFilter!}',
-                style: GoogleFonts.outfit(
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.blue,
-                ),
-              ),
-            ],
             const SizedBox(width: 4),
             Icon(
               Icons.arrow_drop_down_rounded,
@@ -1822,7 +1792,9 @@ class _ClientDashboardState extends State<ClientDashboard> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              'Status',
+              _calendarStatusFilter != null
+                  ? 'Status · $_calendarStatusFilter'
+                  : 'Status',
               style: GoogleFonts.outfit(
                 fontSize: 11.5,
                 fontWeight: _calendarStatusFilter != null
@@ -1833,17 +1805,6 @@ class _ClientDashboardState extends State<ClientDashboard> {
                     : AppColors.textDarkSoft,
               ),
             ),
-            if (_calendarStatusFilter != null) ...[
-              const SizedBox(width: 6),
-              Text(
-                '· $_calendarStatusFilter',
-                style: GoogleFonts.outfit(
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.amber,
-                ),
-              ),
-            ],
             const SizedBox(width: 4),
             Icon(
               Icons.arrow_drop_down_rounded,
@@ -1894,181 +1855,178 @@ class _ClientDashboardState extends State<ClientDashboard> {
 
     final filtered = _applyCalendarFilters(_localScheduled);
 
-    return Align(
-      alignment: Alignment.topLeft,
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppColors.amber.withOpacity(0.3)),
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.amber.withOpacity(0.08),
-              blurRadius: 20,
-              offset: const Offset(0, 8),
-            ),
-          ],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                _calNav(Icons.chevron_left_rounded, () {
-                  setState(() => _calendarMonth = DateTime(
-                      _calendarMonth.year, _calendarMonth.month - 1));
-                }),
-                Text(
-                  DateFormat('MMMM yyyy').format(_calendarMonth),
-                  style: GoogleFonts.bricolageGrotesque(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.textDark,
-                  ),
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.amber.withOpacity(0.3)),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.amber.withOpacity(0.08),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              _calNav(Icons.chevron_left_rounded, () {
+                setState(() => _calendarMonth = DateTime(
+                    _calendarMonth.year, _calendarMonth.month - 1));
+              }),
+              Text(
+                DateFormat('MMMM yyyy').format(_calendarMonth),
+                style: GoogleFonts.bricolageGrotesque(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.textDark,
                 ),
-                _calNav(Icons.chevron_right_rounded, () {
-                  setState(() => _calendarMonth = DateTime(
-                      _calendarMonth.year, _calendarMonth.month + 1));
-                }),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: ['S', 'M', 'T', 'W', 'T', 'F', 'S']
-                  .map((d) => Expanded(
-                child: Center(
-                  child: Text(
-                    d,
-                    style: GoogleFonts.outfit(
-                      fontSize: 10.5,
-                      color: AppColors.textDarkMuted,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-              ))
-                  .toList(),
-            ),
-            const SizedBox(height: 6),
-            GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 7,
-                mainAxisSpacing: 6,
-                crossAxisSpacing: 6,
-                childAspectRatio: 0.85,
               ),
-              itemCount: startWeekday + daysInMonth,
-              itemBuilder: (context, i) {
-                if (i < startWeekday) return const SizedBox();
-                final day = i - startWeekday + 1;
-                final date =
-                DateTime(_calendarMonth.year, _calendarMonth.month, day);
-                final isSelected = _isSameDay(date, _selectedDate);
-                final isToday = _isSameDay(date, DateTime.now());
-                final posts = filtered
-                    .where((p) => _isSameDay(p.scheduledAt, date))
-                    .toList();
+              _calNav(Icons.chevron_right_rounded, () {
+                setState(() => _calendarMonth = DateTime(
+                    _calendarMonth.year, _calendarMonth.month + 1));
+              }),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: ['S', 'M', 'T', 'W', 'T', 'F', 'S']
+                .map((d) => Expanded(
+              child: Center(
+                child: Text(
+                  d,
+                  style: GoogleFonts.outfit(
+                    fontSize: 10.5,
+                    color: AppColors.textDarkMuted,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ))
+                .toList(),
+          ),
+          const SizedBox(height: 6),
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 7,
+              mainAxisSpacing: 6,
+              crossAxisSpacing: 6,
+              childAspectRatio: 0.85,
+            ),
+            itemCount: startWeekday + daysInMonth,
+            itemBuilder: (context, i) {
+              if (i < startWeekday) return const SizedBox();
+              final day = i - startWeekday + 1;
+              final date =
+              DateTime(_calendarMonth.year, _calendarMonth.month, day);
+              final isSelected = _isSameDay(date, _selectedDate);
+              final isToday = _isSameDay(date, DateTime.now());
+              final posts = filtered
+                  .where((p) => _isSameDay(p.scheduledAt, date))
+                  .toList();
 
-                return GestureDetector(
-                  onTap: () => setState(() => _selectedDate = date),
-                  child: Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(8),
+              return GestureDetector(
+                onTap: () => setState(() => _selectedDate = date),
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
+                    color: isSelected
+                        ? AppColors.amber.withOpacity(0.25)
+                        : isToday
+                        ? AppColors.cyan.withOpacity(0.15)
+                        : AppColors.scaffoldLight,
+                    border: Border.all(
                       color: isSelected
-                          ? AppColors.amber.withOpacity(0.25)
+                          ? AppColors.amber
                           : isToday
-                          ? AppColors.cyan.withOpacity(0.15)
-                          : AppColors.scaffoldLight,
-                      border: Border.all(
-                        color: isSelected
-                            ? AppColors.amber
-                            : isToday
-                            ? AppColors.cyan.withOpacity(0.6)
-                            : AppColors.borderLight,
-                        width: isSelected ? 1.4 : 1,
-                      ),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Row(
-                          children: [
-                            Text(
-                              '$day',
-                              style: GoogleFonts.outfit(
-                                fontSize: 11,
-                                fontWeight: isSelected
-                                    ? FontWeight.w800
-                                    : FontWeight.w600,
-                                color: AppColors.textDark,
-                              ),
-                            ),
-                            const Spacer(),
-                            if (posts.isNotEmpty)
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 4, vertical: 1),
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(4),
-                                  color: AppColors.amber.withOpacity(0.25),
-                                ),
-                                child: Text(
-                                  '${posts.length}',
-                                  style: GoogleFonts.outfit(
-                                    fontSize: 8,
-                                    fontWeight: FontWeight.w800,
-                                    color: AppColors.amber,
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                        const SizedBox(height: 2),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: posts
-                                .take(2)
-                                .map((p) => _miniCalendarChip(p))
-                                .toList(),
-                          ),
-                        ),
-                        if (posts.length > 2)
-                          Text(
-                            '+${posts.length - 2}',
-                            textAlign: TextAlign.center,
-                            style: GoogleFonts.outfit(
-                              fontSize: 7.5,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.textDarkMuted,
-                            ),
-                          ),
-                      ],
+                          ? AppColors.cyan.withOpacity(0.6)
+                          : AppColors.borderLight,
+                      width: isSelected ? 1.4 : 1,
                     ),
                   ),
-                );
-              },
-            ),
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 10,
-              runSpacing: 6,
-              alignment: WrapAlignment.center,
-              children: [
-                _legend(AppColors.instagram, 'Instagram'),
-                _legend(AppColors.facebook, 'Facebook'),
-                _legend(AppColors.youtube, 'YouTube'),
-                _legend(AppColors.linkedin, 'LinkedIn'),
-                _legend(AppColors.threads, 'Threads'),
-              ],
-            ),
-          ],
-        ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          Text(
+                            '$day',
+                            style: GoogleFonts.outfit(
+                              fontSize: 11,
+                              fontWeight: isSelected
+                                  ? FontWeight.w800
+                                  : FontWeight.w600,
+                              color: AppColors.textDark,
+                            ),
+                          ),
+                          const Spacer(),
+                          if (posts.isNotEmpty)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 4, vertical: 1),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(4),
+                                color: AppColors.amber.withOpacity(0.25),
+                              ),
+                              child: Text(
+                                '${posts.length}',
+                                style: GoogleFonts.outfit(
+                                  fontSize: 8,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppColors.amber,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: posts
+                              .take(2)
+                              .map((p) => _miniCalendarChip(p))
+                              .toList(),
+                        ),
+                      ),
+                      if (posts.length > 2)
+                        Text(
+                          '+${posts.length - 2}',
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.outfit(
+                            fontSize: 7.5,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.textDarkMuted,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 10,
+            runSpacing: 6,
+            alignment: WrapAlignment.center,
+            children: [
+              _legend(AppColors.instagram, 'Instagram'),
+              _legend(AppColors.facebook, 'Facebook'),
+              _legend(AppColors.youtube, 'YouTube'),
+              _legend(AppColors.linkedin, 'LinkedIn'),
+              _legend(AppColors.threads, 'Threads'),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -2212,7 +2170,7 @@ class _ClientDashboardState extends State<ClientDashboard> {
   }
 
   // ═════════════════════════════════════════════════════════════════════════
-  // PDF EXPORT
+  // PDF EXPORT — FIXED: no pw.Expanded outside bounded Row
   // ═════════════════════════════════════════════════════════════════════════
   Future<void> _exportAnalyticsPdf() async {
     if (_isExporting) return;
@@ -2229,7 +2187,7 @@ class _ClientDashboardState extends State<ClientDashboard> {
         boldFont = await PdfGoogleFonts.outfitBold();
         headingFont = await PdfGoogleFonts.bricolageGrotesqueBold();
       } catch (fontErr) {
-        debugPrint('Font load failed, using fallback: $fontErr');
+        debugPrint('Font load failed: $fontErr');
         throw Exception(
             'Fonts could not be loaded. Please check your internet connection and try again.');
       }
@@ -2297,39 +2255,33 @@ class _ClientDashboardState extends State<ClientDashboard> {
                 color: PdfColor.fromInt(0xFF1E1B4B),
                 borderRadius: pw.BorderRadius.circular(10),
               ),
-              child: pw.Row(
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
                 children: [
-                  pw.Expanded(
-                    child: pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.start,
-                      children: [
-                        pw.Text(
-                          _client.companyName,
-                          style: pw.TextStyle(
-                            font: headingFont,
-                            fontSize: 20,
-                            color: PdfColors.white,
-                            fontWeight: pw.FontWeight.bold,
-                          ),
-                        ),
-                        pw.SizedBox(height: 4),
-                        pw.Text(
-                          'Analytics Report • ${_analyticsRange.label}',
-                          style: pw.TextStyle(
-                            font: baseFont,
-                            fontSize: 11,
-                            color: PdfColors.grey300,
-                          ),
-                        ),
-                        pw.Text(
-                          'Generated: ${DateFormat('dd MMM yyyy • HH:mm').format(DateTime.now())}',
-                          style: pw.TextStyle(
-                            font: baseFont,
-                            fontSize: 9,
-                            color: PdfColors.grey400,
-                          ),
-                        ),
-                      ],
+                  pw.Text(
+                    _client.companyName,
+                    style: pw.TextStyle(
+                      font: headingFont,
+                      fontSize: 20,
+                      color: PdfColors.white,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
+                  pw.SizedBox(height: 4),
+                  pw.Text(
+                    'Analytics Report • ${_analyticsRange.label}',
+                    style: pw.TextStyle(
+                      font: baseFont,
+                      fontSize: 11,
+                      color: PdfColors.grey300,
+                    ),
+                  ),
+                  pw.Text(
+                    'Generated: ${DateFormat('dd MMM yyyy • HH:mm').format(DateTime.now())}',
+                    style: pw.TextStyle(
+                      font: baseFont,
+                      fontSize: 9,
+                      color: PdfColors.grey400,
                     ),
                   ),
                 ],
@@ -2629,6 +2581,8 @@ class _ClientDashboardState extends State<ClientDashboard> {
     );
   }
 
+  // FIXED: returns a plain pw.Container, not pw.Expanded.
+  // Caller wraps it in pw.Expanded when needed.
   pw.Widget _pdfKpiCard(
       String label,
       int value,
@@ -2855,15 +2809,17 @@ class _SocialHandlesFormState extends State<SocialHandlesForm> {
                     children: [
                       Icon(platform.icon, size: 18, color: platform.color),
                       const SizedBox(width: 8),
-                      Text(
-                        platform.name,
-                        style: GoogleFonts.outfit(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.textDark,
+                      Expanded(
+                        child: Text(
+                          platform.name,
+                          style: GoogleFonts.outfit(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.textDark,
+                          ),
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      const Spacer(),
                       Switch.adaptive(
                         value: isConnected,
                         activeColor: AppColors.green,
@@ -2947,6 +2903,7 @@ class _SocialHandlesFormState extends State<SocialHandlesForm> {
                       companyName: widget.client.companyName,
                       logoColor: widget.client.logoColor,
                       logoBytes: widget.client.logoBytes,
+                      logoUrl: widget.client.logoUrl,
                       address: widget.client.address,
                       website: widget.client.website,
                       mobile: widget.client.mobile,
@@ -2979,7 +2936,7 @@ class _SocialHandlesFormState extends State<SocialHandlesForm> {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// LIVE COUNTER WIDGETS — static (no animation)
+// LIVE COUNTER WIDGET — FIXED: uses IntrinsicHeight + no Expanded abuse
 // ═════════════════════════════════════════════════════════════════════════════
 class _LiveCounter extends StatelessWidget {
   final IconData icon;
@@ -3005,17 +2962,22 @@ class _LiveCounter extends StatelessWidget {
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
           Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
               Icon(icon, size: 12, color: color),
               const SizedBox(width: 4),
-              Text(
-                label,
-                style: GoogleFonts.outfit(
-                  fontSize: 9.5,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textDarkMuted,
+              Flexible(
+                child: Text(
+                  label,
+                  style: GoogleFonts.outfit(
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textDarkMuted,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],
@@ -3347,8 +3309,7 @@ class _ClientCreateContentFormState extends State<ClientCreateContentForm> {
                   value: c,
                   child: Text(
                     c.companyName,
-                    style: GoogleFonts.outfit(
-                        color: AppColors.textDark),
+                    style: GoogleFonts.outfit(color: AppColors.textDark),
                   ),
                 ))
                     .toList(),
@@ -4332,28 +4293,17 @@ class _ClientCreateContentFormState extends State<ClientCreateContentForm> {
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            child: Row(
+            child: Wrap(
+              spacing: 18,
+              runSpacing: 6,
               children: const [
-                Icon(Icons.thumb_up_alt_outlined,
-                    size: 18, color: AppColors.textDarkMuted),
-                SizedBox(width: 6),
-                Text('Like',
-                    style: TextStyle(
-                        fontSize: 12, color: AppColors.textDarkMuted)),
-                SizedBox(width: 18),
-                Icon(Icons.chat_bubble_outline_rounded,
-                    size: 18, color: AppColors.textDarkMuted),
-                SizedBox(width: 6),
-                Text('Comment',
-                    style: TextStyle(
-                        fontSize: 12, color: AppColors.textDarkMuted)),
-                SizedBox(width: 18),
-                Icon(Icons.share_outlined,
-                    size: 18, color: AppColors.textDarkMuted),
-                SizedBox(width: 6),
-                Text('Share',
-                    style: TextStyle(
-                        fontSize: 12, color: AppColors.textDarkMuted)),
+                _FBPreviewAction(
+                    icon: Icons.thumb_up_alt_outlined, label: 'Like'),
+                _FBPreviewAction(
+                    icon: Icons.chat_bubble_outline_rounded,
+                    label: 'Comment'),
+                _FBPreviewAction(
+                    icon: Icons.share_outlined, label: 'Share'),
               ],
             ),
           ),
@@ -4402,6 +4352,7 @@ class _ClientCreateContentFormState extends State<ClientCreateContentForm> {
                     fontWeight: FontWeight.w700,
                     fontSize: 13,
                   ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
               Text('2m',
@@ -4418,31 +4369,16 @@ class _ClientCreateContentFormState extends State<ClientCreateContentForm> {
           const SizedBox(height: 10),
           _mediaPreviewCarousel(height: 320),
           const SizedBox(height: 10),
-          Row(
+          Wrap(
+            spacing: 18,
+            runSpacing: 6,
             children: const [
-              Icon(Icons.favorite_border_rounded,
-                  size: 18, color: AppColors.textDarkMuted),
-              SizedBox(width: 6),
-              Text('0',
-                  style: TextStyle(
-                      fontSize: 12, color: AppColors.textDarkMuted)),
-              SizedBox(width: 18),
-              Icon(Icons.chat_bubble_outline_rounded,
-                  size: 18, color: AppColors.textDarkMuted),
-              SizedBox(width: 6),
-              Text('0',
-                  style: TextStyle(
-                      fontSize: 12, color: AppColors.textDarkMuted)),
-              SizedBox(width: 18),
-              Icon(Icons.repeat_rounded,
-                  size: 18, color: AppColors.textDarkMuted),
-              SizedBox(width: 6),
-              Text('0',
-                  style: TextStyle(
-                      fontSize: 12, color: AppColors.textDarkMuted)),
-              SizedBox(width: 18),
-              Icon(Icons.send_outlined,
-                  size: 18, color: AppColors.textDarkMuted),
+              _SimpleAction(
+                  icon: Icons.favorite_border_rounded, label: '0'),
+              _SimpleAction(
+                  icon: Icons.chat_bubble_outline_rounded, label: '0'),
+              _SimpleAction(icon: Icons.repeat_rounded, label: '0'),
+              _SimpleAction(icon: Icons.send_outlined, label: ''),
             ],
           ),
         ],
@@ -4663,16 +4599,19 @@ class _ClientCreateContentFormState extends State<ClientCreateContentForm> {
           const Divider(height: 1, color: AppColors.borderLight),
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
+            child: Wrap(
+              spacing: 24,
+              runSpacing: 6,
+              alignment: WrapAlignment.spaceAround,
               children: const [
-                _LinkedInAction(icon: Icons.thumb_up_outlined, label: 'Like'),
-                _LinkedInAction(
+                _SimpleActionWithLabel(
+                    icon: Icons.thumb_up_outlined, label: 'Like'),
+                _SimpleActionWithLabel(
                     icon: Icons.chat_bubble_outline_rounded,
                     label: 'Comment'),
-                _LinkedInAction(
+                _SimpleActionWithLabel(
                     icon: Icons.repeat_rounded, label: 'Repost'),
-                _LinkedInAction(
+                _SimpleActionWithLabel(
                     icon: Icons.send_outlined, label: 'Send'),
               ],
             ),
@@ -4843,12 +4782,51 @@ String clientStatusLabel(PostStatus s) {
   }
 }
 
-// ── LinkedIn action row helper
-class _LinkedInAction extends StatelessWidget {
+// ── Small reusable action widgets used in previews
+class _FBPreviewAction extends StatelessWidget {
   final IconData icon;
   final String label;
-  const _LinkedInAction({required this.icon, required this.label});
+  const _FBPreviewAction({required this.icon, required this.label});
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 18, color: AppColors.textDarkMuted),
+        const SizedBox(width: 6),
+        Text(label,
+            style: const TextStyle(
+                fontSize: 12, color: AppColors.textDarkMuted)),
+      ],
+    );
+  }
+}
 
+class _SimpleAction extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  const _SimpleAction({required this.icon, required this.label});
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 18, color: AppColors.textDarkMuted),
+        if (label.isNotEmpty) ...[
+          const SizedBox(width: 6),
+          Text(label,
+              style: const TextStyle(
+                  fontSize: 12, color: AppColors.textDarkMuted)),
+        ],
+      ],
+    );
+  }
+}
+
+class _SimpleActionWithLabel extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  const _SimpleActionWithLabel({required this.icon, required this.label});
   @override
   Widget build(BuildContext context) {
     return Row(

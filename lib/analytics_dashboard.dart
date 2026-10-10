@@ -141,14 +141,14 @@ class PublishingSections {
             ],
           ),
           const SizedBox(height: 12),
-          Row(
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
             children: [
               _metricChip(
                   Icons.favorite_rounded, '${post.likes}', AppColors.pink),
-              const SizedBox(width: 8),
               _metricChip(
                   Icons.comment_rounded, '${post.comments}', AppColors.cyan),
-              const SizedBox(width: 8),
               _metricChip(
                   Icons.share_rounded, '${post.shares}', AppColors.green),
             ],
@@ -1120,86 +1120,81 @@ class PublishingSections {
       }
     }
 
-    return SizedBox(
-      height: 145,
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: AppColors.scaffoldLight,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: p.color.withOpacity(0.25)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: days
-                  .map((d) => Expanded(
-                child: Center(
-                  child: Text(
-                    d,
-                    style: GoogleFonts.outfit(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textDarkMuted,
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.scaffoldLight,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: p.color.withOpacity(0.25)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: days
+                .map((d) => Expanded(
+              child: Center(
+                child: Text(
+                  d,
+                  style: GoogleFonts.outfit(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textDarkMuted,
+                  ),
+                ),
+              ),
+            ))
+                .toList(),
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: days.map((d) {
+              final slot = byDay[d];
+              final score = slot?.audienceScore ?? 0;
+              return Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 2),
+                  child: Container(
+                    height: 46,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(6),
+                      color: p.color
+                          .withOpacity(0.10 + 0.55 * (score / 100)),
+                      border: Border.all(
+                          color: p.color.withOpacity(0.35), width: 0.5),
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          slot == null ? '—' : _hourLabel(slot.hour),
+                          style: GoogleFonts.outfit(
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                          ),
+                        ),
+                        Text(
+                          '$score',
+                          style: GoogleFonts.outfit(
+                            fontSize: 8,
+                            color: Colors.white.withOpacity(0.9),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
-              ))
-                  .toList(),
-            ),
-            const SizedBox(height: 6),
-            Row(
-              children: days.map((d) {
-                final slot = byDay[d];
-                final score = slot?.audienceScore ?? 0;
-                return Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 2),
-                    child: Container(
-                      height: 46,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(6),
-                        color: p.color
-                            .withOpacity(0.10 + 0.55 * (score / 100)),
-                        border: Border.all(
-                            color: p.color.withOpacity(0.35), width: 0.5),
-                      ),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            slot == null ? '—' : _hourLabel(slot.hour),
-                            style: GoogleFonts.outfit(
-                              fontSize: 9.5,
-                              fontWeight: FontWeight.w800,
-                              color: Colors.white,
-                            ),
-                          ),
-                          Text(
-                            '$score',
-                            style: GoogleFonts.outfit(
-                              fontSize: 8,
-                              color: Colors.white.withOpacity(0.9),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Darker color = higher audience peak activity. Best time slot: ${_bestDayLabel(byDay)}',
-              style: GoogleFonts.outfit(
-                  fontSize: 10, color: AppColors.textDarkMuted),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
-        ),
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Darker color = higher audience peak activity. Best time slot: ${_bestDayLabel(byDay)}',
+            style: GoogleFonts.outfit(
+                fontSize: 10, color: AppColors.textDarkMuted),
+          ),
+        ],
       ),
     );
   }
@@ -1373,7 +1368,7 @@ class PlatformAnalytics {
 }
 
 // ═════════════════════════════════════════════════════════════════════════
-// ADD CLIENT & OTHER FORMS (Preserved Fully)
+// ADD CLIENT FORM
 // ═════════════════════════════════════════════════════════════════════════
 class AddClientForm extends StatefulWidget {
   final ValueChanged<ClientModel> onSave;

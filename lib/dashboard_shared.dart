@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'dart:typed_data';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// COOL COLOR REFERENCE PALETTE
+// COLOR PALETTE
 // ─────────────────────────────────────────────────────────────────────────────
 class AppColors {
   static const Color cyan = Color(0xFF00F0FF);
@@ -136,12 +136,7 @@ class ClientModel {
   final String companyName;
   final Color logoColor;
   final Uint8List? logoBytes;
-
-  /// Server URL for the logo (returned by `register_company.php`).
-  /// Takes precedence over [logoBytes] when both are present — this is
-  /// how a logo uploaded to the server is displayed on the client card.
   final String? logoUrl;
-
   final String address;
   final String website;
   final String mobile;
@@ -152,8 +147,8 @@ class ClientModel {
   ClientModel({
     required this.companyName,
     required this.logoColor,
-    this.logoBytes,          // now optional
-    this.logoUrl,            // ← NEW: server URL (uploads/...)
+    this.logoBytes,
+    this.logoUrl,
     required this.address,
     required this.website,
     required this.mobile,
@@ -162,7 +157,6 @@ class ClientModel {
     this.metaConnected = const {},
   });
 
-  /// Handy copy helper so callers don't need to rebuild every field.
   ClientModel copyWith({
     String? companyName,
     Color? logoColor,
@@ -190,8 +184,6 @@ class ClientModel {
   }
 }
 
-// Add inside dashboard_shared.dart
-
 enum PostStatus {
   draft,
   pendingApproval,
@@ -200,7 +192,6 @@ enum PostStatus {
   failed,
 }
 
-// Update ScheduledPost to include status + ownerName:
 class ScheduledPost {
   final String title;
   final String caption;
@@ -342,7 +333,7 @@ String monthName(int m) => [
 bool isSameDay(DateTime a, DateTime b) =>
     a.year == b.year && a.month == b.month && a.day == b.day;
 
-/// Shared empty-state widget used by both dashboard files.
+/// Shared empty-state widget.
 Widget buildEmptyState({
   required IconData icon,
   required String title,
@@ -487,9 +478,6 @@ Widget buildPostCard(ScheduledPost post) {
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// DATE RANGE MODEL (for Analytics)
-// ─────────────────────────────────────────────────────────────────────────────
 class DateRangeSelection {
   final DateTime startDate;
   final DateTime endDate;
