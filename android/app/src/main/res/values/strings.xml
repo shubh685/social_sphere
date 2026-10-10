@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="facebook_app_id">1105167765228217</string>
+    <string name="facebook_client_token">EAAPtJOwQSrkBSsZCkL3Nnon9ZBaTZCdhe1kA7AdZAfJgoV5iC3HTtKNH8NSDiLZBxS27l0LAbKy0sBSmJRUEQtKkRcnZCwGpfFrZBNn88k0lzQSdZAmqWuuHvlddrzAa5stEbUw8cjqnphK6WEuUFgYXP6ywh6zuPd0Ya53aQ2dpzH9uu9bDlA1VEvKJLUz1kK8NysZCySVZCA5tB715LO0m7nclLZAlCw7KFiV</string>
+    <string name="fb_login_protocol_scheme">f1105167765228217</string>
+</resources>

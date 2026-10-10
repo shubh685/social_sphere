@@ -7,7 +7,9 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:socialee_sphere/login.dart';
-import 'package:socialee_sphere/dashboard.dart'; // Ensure your dashboard is imported
+import 'package:socialee_sphere/dashboard.dart';
+
+import 'meta_connect.dart'; // Ensure your dashboard is imported
 
 /// ─────────────────────────────────────────────────────────────────────────────
 /// Platform-aware base URL.
@@ -34,7 +36,8 @@ String get kBaseUrl {
 String get kLoginEndpoint => "$kBaseUrl/login.php";
 
 void main() {
-  WidgetsFlutterBinding.ensureInitialized();
+  MetaApiService.userAccessToken = 'EAAPtJOwQSrkBSvhXkwN7GJks7ZBTrb1vwZCgZAwZCDxJiczNP5NiYuagN41KTo6OT91c3P5sESTZA41kPiL4XyBARQjgJgdp4sL8qNSv2jc2DBjOydwswKeoKhUZBFtzZC6nNpvwoM6TRMcMu7Wl6ZBmqRq4VZAV9kB25Bo0GDCVjZAWgUFZApscRZCmOmlB4ZBKDX0F9GZCLBjGlIDwriu3Xe2GhFNcNLjTK9dYpunyZAJKMeuZB9OcI0mcVR8sClC1GarFDvhOHOEWo6ZBOekZBhNV3T1EbX'; // your rotated token
+  MetaApiService.debugLog = true; // turn off in production
   runApp(const MyApp());
 }
 

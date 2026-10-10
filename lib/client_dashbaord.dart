@@ -1,15 +1,68 @@
-// client_dashbaord.dart
+// client_dashboard.dart
 import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'analytics_dashboard.dart';
 import 'dashboard_shared.dart';
+import 'meta_connect.dart';
+
+// ═════════════════════════════════════════════════════════════════════════════
+// CONNECTED SOCIAL ACCOUNT MODEL
+// ═════════════════════════════════════════════════════════════════════════════
+class ConnectedSocialAccount {
+  final String platform;
+  final String accountId;
+  final String accountName;
+  final String handle;
+  final String? pageAccessToken;
+  final String? profilePicUrl;
+  final int followers;
+
+  ConnectedSocialAccount({
+    required this.platform,
+    required this.accountId,
+    required this.accountName,
+    required this.handle,
+    this.pageAccessToken,
+    this.profilePicUrl,
+    this.followers = 0,
+  });
+
+  factory ConnectedSocialAccount.fromJson(Map<String, dynamic> j) {
+    final nameRaw = j['account_name'] ?? j['name'] ?? j['username'] ?? j['handle'] ?? '';
+    return ConnectedSocialAccount(
+      platform: (j['platform'] ?? '').toString(),
+      accountId: (j['account_id'] ?? '').toString(),
+      accountName: nameRaw.toString(),
+      handle: (j['handle'] ?? '').toString(),
+      pageAccessToken: j['page_access_token']?.toString(),
+      profilePicUrl: (j['account_picture'] ?? j['profile_pic_url'] ?? '')
+          .toString()
+          .isEmpty
+          ? null
+          : (j['account_picture'] ?? j['profile_pic_url']).toString(),
+      followers: int.tryParse('${j['followers'] ?? 0}') ?? 0,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'platform': platform,
+    'account_id': accountId,
+    'account_name': accountName,
+    'handle': handle,
+    'page_access_token': pageAccessToken,
+    'profile_pic_url': profilePicUrl,
+    'followers': followers,
+  };
+}
 
 class ClientDashboard extends StatefulWidget {
   final ClientModel client;
@@ -34,6 +87,10 @@ class ClientDashboard extends StatefulWidget {
 }
 
 class _ClientDashboardState extends State<ClientDashboard> {
+  // ── Backend config ─────────────────────────────────────────────────────
+  static const String _apiBase = 'http://192.168.1.17/socialee_sphere';
+  static const String _agencyName = 'Grow Socialee';
+
   int _tabIndex = 0;
 
   late final List<_ClientTab> _tabs = [
@@ -49,11 +106,16 @@ class _ClientDashboardState extends State<ClientDashboard> {
   late ClientModel _client;
 
   final List<ScheduledPost> _localScheduled = [];
-
   final Map<String, LiveEngagement> _liveEngagement = {};
   Timer? _liveUpdateTimer;
-
   final Set<String> _expandedPosts = {};
+
+  final Map<String, ConnectedSocialAccount> _connectedAccounts = {};
+
+  bool _isConnecting = false;
+  String? _connectError;
+  String? _currentlyConnectingPlatform;
+  bool _isLoadingAccounts = false;
 
   DateRangeSelection _analyticsRange = DateRangeSelection(
     startDate: DateTime.now().subtract(const Duration(days: 30)),
@@ -69,7 +131,6 @@ class _ClientDashboardState extends State<ClientDashboard> {
   String? _calendarStatusFilter;
   final Set<String> _calendarTypeFilters = {};
 
-  bool _showSocialForm = false;
   bool _isExporting = false;
 
   @override
@@ -79,6 +140,25 @@ class _ClientDashboardState extends State<ClientDashboard> {
     _localScheduled.addAll(widget.scheduledPosts);
     _initializeLiveEngagement();
     _startLiveUpdates();
+    _loadConnectedAccountsFromClient();
+  }
+
+  void _loadConnectedAccountsFromClient() {
+    for (final entry in _client.socialHandles.entries) {
+      final platformName = entry.key;
+      final handle = entry.value;
+      if (handle.isEmpty) continue;
+
+      _connectedAccounts[platformName] = ConnectedSocialAccount(
+        platform: platformName,
+        accountId: handle,
+        accountName: platformName,
+        handle: handle,
+        profilePicUrl: null,
+        followers: 0,
+        pageAccessToken: null,
+      );
+    }
   }
 
   void _initializeLiveEngagement() {
@@ -212,7 +292,7 @@ class _ClientDashboardState extends State<ClientDashboard> {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    '${widget.client.socialHandles.length} social handle(s) • ${widget.client.email}',
+                    '${_connectedAccounts.length} connected account(s) • ${widget.client.email}',
                     style: GoogleFonts.outfit(
                         fontSize: 11, color: AppColors.textDarkMuted),
                     overflow: TextOverflow.ellipsis,
@@ -223,7 +303,23 @@ class _ClientDashboardState extends State<ClientDashboard> {
             ),
             if (!isMobile)
               ElevatedButton.icon(
-                onPressed: () => setState(() => _tabIndex = 1),
+                onPressed: () {
+                  if (_connectedAccounts.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          'Connect at least one social account first (Social tab).',
+                          style: GoogleFonts.outfit(color: Colors.white),
+                        ),
+                        backgroundColor: AppColors.amber.withOpacity(0.95),
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                    setState(() => _tabIndex = 2);
+                    return;
+                  }
+                  setState(() => _tabIndex = 1);
+                },
                 icon: const Icon(Icons.add_rounded, size: 16),
                 label: Text(
                   'New Content',
@@ -345,9 +441,13 @@ class _ClientDashboardState extends State<ClientDashboard> {
       case 0:
         return _buildOverviewTab();
       case 1:
+        if (_connectedAccounts.isEmpty) {
+          return _buildNoAccountsState();
+        }
         return ClientCreateContentForm(
           clients: [_client],
           lockedClient: _client,
+          connectedAccounts: Map.unmodifiable(_connectedAccounts),
           onSave: (post) {
             setState(() {
               _localScheduled.add(post);
@@ -397,8 +497,775 @@ class _ClientDashboardState extends State<ClientDashboard> {
     }
   }
 
+  Widget _buildNoAccountsState() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          buildSectionTitle('Connect a Social Account First'),
+          const SizedBox(height: 4),
+          Text(
+            'You need to connect at least one social account before you can schedule content.',
+            style: GoogleFonts.outfit(
+                fontSize: 11.5, color: AppColors.textDarkMuted),
+          ),
+          const SizedBox(height: 20),
+          buildEmptyState(
+            icon: Icons.link_off_rounded,
+            title: 'No accounts connected',
+            subtitle:
+            'Go to the Social tab and connect your business account details.',
+          ),
+          const SizedBox(height: 20),
+          ElevatedButton.icon(
+            onPressed: () => setState(() => _tabIndex = 2),
+            icon: const Icon(Icons.link_rounded,
+                size: 16, color: Colors.white),
+            label: Text(
+              'Go to Social Tab',
+              style: GoogleFonts.outfit(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.purple,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              elevation: 0,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ═════════════════════════════════════════════════════════════════════════
-  // EXPANDABLE POST CARD
+  // SOCIAL TAB & META API VERIFICATION
+  // ═════════════════════════════════════════════════════════════════════════
+// ═════════════════════════════════════════════════════════════════════════
+  // SOCIAL TAB & META API VERIFICATION VIA SDK
+  // ═════════════════════════════════════════════════════════════════════════
+  Widget _buildSocialTab() {
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(child: buildSectionTitle('Connect Social Accounts')),
+              if (_isLoadingAccounts)
+                const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Connect your Facebook and Instagram accounts instantly using Meta Login, or verify individual profile links below.',
+            style: GoogleFonts.outfit(
+                fontSize: 11.5, color: AppColors.textDarkMuted),
+          ),
+          const SizedBox(height: 14),
+          // ── One-tap Meta SDK Login Button ──────────
+          ElevatedButton.icon(
+            onPressed: _connectAllMetaAccountsViaSdk,
+            icon: const Icon(Icons.facebook_rounded, size: 18, color: Colors.white),
+            label: Text(
+              'Connect Meta Accounts via Facebook Login',
+              style: GoogleFonts.outfit(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+              ),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.facebook,
+              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              elevation: 0,
+            ),
+          ),
+          if (_connectError != null) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.red.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.red.withOpacity(0.3)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.error_outline_rounded,
+                      size: 16, color: AppColors.red),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _connectError!,
+                      style: GoogleFonts.outfit(
+                          fontSize: 11.5, color: AppColors.red),
+                    ),
+                  ),
+                  InkWell(
+                    onTap: () => setState(() => _connectError = null),
+                    child: const Icon(Icons.close_rounded,
+                        size: 14, color: AppColors.red),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          const SizedBox(height: 16),
+          ...kSocialPlatforms
+              .map((platform) => _buildPlatformConnectCard(platform)),
+          const SizedBox(height: 24),
+          buildSectionTitle(
+              'Connected Accounts (${_connectedAccounts.length})'),
+          const SizedBox(height: 4),
+          Text(
+            'These accounts are available for scheduling posts.',
+            style: GoogleFonts.outfit(
+                fontSize: 11.5, color: AppColors.textDarkMuted),
+          ),
+          const SizedBox(height: 12),
+          _buildConnectedAccountsList(),
+        ],
+      ),
+    );
+  }
+
+  /// Automatically authenticates via flutter_facebook_auth and populates all managed pages & IG accounts
+  Future<void> _connectAllMetaAccountsViaSdk() async {
+    setState(() {
+      _isConnecting = true;
+      _currentlyConnectingPlatform = 'Facebook';
+      _connectError = null;
+    });
+
+    try {
+      await MetaApiService.loginAndAuthorize();
+      final pages = await MetaApiService.fetchFacebookPages();
+
+      for (final page in pages) {
+        final pageId = (page['id'] ?? '').toString();
+        final pageName = (page['name'] ?? '').toString();
+        final pageToken = (page['access_token'] ?? '').toString();
+        final fanCount = int.tryParse('${page['followers_count'] ?? page['fan_count'] ?? 0}') ?? 0;
+        final picUrl = (page['picture']?['data']?['url'] ?? '').toString();
+        final link = (page['link'] ?? 'https://facebook.com/$pageId').toString();
+
+        if (pageId.isNotEmpty) {
+          _connectedAccounts['Facebook'] = ConnectedSocialAccount(
+            platform: 'Facebook',
+            accountId: pageId,
+            accountName: pageName,
+            handle: link,
+            pageAccessToken: pageToken,
+            profilePicUrl: picUrl.isEmpty ? null : picUrl,
+            followers: fanCount,
+          );
+        }
+
+        final igRaw = page['instagram_business_account'];
+        if (igRaw is Map) {
+          final ig = Map<String, dynamic>.from(igRaw);
+          final igId = (ig['id'] ?? '').toString();
+          final igUsername = (ig['username'] ?? '').toString();
+          final igName = (ig['name'] ?? igUsername).toString();
+          final igFollowers = int.tryParse('${ig['followers_count'] ?? 0}') ?? 0;
+          final igPic = (ig['profile_picture_url'] ?? '').toString();
+
+          if (igId.isNotEmpty && igUsername.isNotEmpty) {
+            _connectedAccounts['Instagram'] = ConnectedSocialAccount(
+              platform: 'Instagram',
+              accountId: igId,
+              accountName: igName,
+              handle: 'https://instagram.com/$igUsername',
+              pageAccessToken: pageToken,
+              profilePicUrl: igPic.isEmpty ? null : igPic,
+              followers: igFollowers,
+            );
+          }
+        }
+      }
+
+      if (!mounted) return;
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Meta accounts connected successfully!',
+            style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.w600),
+          ),
+          backgroundColor: AppColors.green.withOpacity(0.9),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _connectError = 'Meta connection failed: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Meta connection failed: $e',
+            style: GoogleFonts.outfit(color: Colors.white),
+          ),
+          backgroundColor: AppColors.red.withOpacity(0.9),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isConnecting = false;
+          _currentlyConnectingPlatform = null;
+        });
+      }
+    }
+  }
+
+  Widget _buildPlatformConnectCard(SocialPlatform platform) {
+    final connected = _connectedAccounts[platform.name];
+    final isConnected = connected != null;
+    final isConnecting = _currentlyConnectingPlatform == platform.name;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: isConnected
+              ? platform.color.withOpacity(0.55)
+              : AppColors.borderLight,
+          width: isConnected ? 1.6 : 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: (isConnected ? platform.color : Colors.black)
+                .withOpacity(isConnected ? 0.10 : 0.03),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              gradient: LinearGradient(
+                colors: [
+                  platform.color.withOpacity(0.25),
+                  platform.color.withOpacity(0.08),
+                ],
+              ),
+              border: Border.all(color: platform.color.withOpacity(0.4)),
+            ),
+            child: connected?.profilePicUrl != null &&
+                connected!.profilePicUrl!.isNotEmpty
+                ? ClipRRect(
+              borderRadius: BorderRadius.circular(11),
+              child: Image.network(
+                connected.profilePicUrl!,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) =>
+                    Icon(platform.icon, color: platform.color, size: 22),
+              ),
+            )
+                : Icon(platform.icon, color: platform.color, size: 22),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        platform.name,
+                        style: GoogleFonts.outfit(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textDark,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (isConnected) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(50),
+                          color: AppColors.green.withOpacity(0.15),
+                          border: Border.all(
+                              color: AppColors.green.withOpacity(0.5)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.check_circle_rounded,
+                                size: 10, color: AppColors.green),
+                            const SizedBox(width: 3),
+                            Text(
+                              'Connected',
+                              style: GoogleFonts.outfit(
+                                fontSize: 9,
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.green,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  isConnected
+                      ? '${connected.accountName} • ${connected.handle} (${connected.followers} followers)'
+                      : 'Not connected yet',
+                  style: GoogleFonts.outfit(
+                    fontSize: 11.5,
+                    color: isConnected
+                        ? platform.color
+                        : AppColors.textDarkMuted,
+                    fontWeight:
+                    isConnected ? FontWeight.w600 : FontWeight.w500,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          if (isConnecting)
+            Container(
+              padding:
+              const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(10),
+                color: platform.color.withOpacity(0.12),
+                border:
+                Border.all(color: platform.color.withOpacity(0.4)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    width: 12,
+                    height: 12,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                          platform.color),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Verifying...',
+                    style: GoogleFonts.outfit(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: platform.color,
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else if (isConnected)
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                OutlinedButton(
+                  onPressed: () => _showConnectDialog(platform),
+                  style: OutlinedButton.styleFrom(
+                    side: BorderSide(color: platform.color.withOpacity(0.5)),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 8),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10)),
+                  ),
+                  child: Text('Edit',
+                      style: GoogleFonts.outfit(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: platform.color)),
+                ),
+                const SizedBox(width: 6),
+                OutlinedButton(
+                  onPressed: () => _disconnectPlatform(platform),
+                  style: OutlinedButton.styleFrom(
+                    side: BorderSide(color: AppColors.red.withOpacity(0.5)),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 8),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10)),
+                  ),
+                  child: Text('Disconnect',
+                      style: GoogleFonts.outfit(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.red)),
+                ),
+              ],
+            )
+          else
+            ElevatedButton.icon(
+              onPressed: () => _showConnectDialog(platform),
+              icon: const Icon(Icons.link_rounded,
+                  size: 14, color: Colors.white),
+              label: Text(
+                'Connect',
+                style: GoogleFonts.outfit(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                ),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: platform.color,
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 14, vertical: 8),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                elevation: 0,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showConnectDialog(SocialPlatform platform) async {
+    final handleController = TextEditingController();
+
+    final existing = _connectedAccounts[platform.name];
+    if (existing != null) {
+      handleController.text = existing.handle;
+    }
+
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Icon(platform.icon, color: platform.color, size: 24),
+            const SizedBox(width: 10),
+            Text('Connect ${platform.name}',
+                style: GoogleFonts.bricolageGrotesque(
+                    fontWeight: FontWeight.w800, fontSize: 18)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Enter the official profile link for ${platform.name}. Meta profile lookup works only for accounts the current token is allowed to access. A URL alone does not grant access; ask the client to authorize the account through your app when required.',
+              style: GoogleFonts.outfit(
+                  fontSize: 12, color: AppColors.textDarkMuted),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: handleController,
+              decoration: InputDecoration(
+                labelText: 'Social Handle / Profile Link URL',
+                hintText: platform.name == 'Instagram' ||
+                    platform.name == 'Facebook'
+                    ? 'https://${platform.name.toLowerCase()}.com/yourhandle'
+                    : '@yourhandle or profile URL',
+                border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancel',
+                style: GoogleFonts.outfit(
+                    color: AppColors.textDarkMuted,
+                    fontWeight: FontWeight.w600)),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final handle = handleController.text.trim();
+              if (handle.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Please enter a valid handle or profile link',
+                        style: GoogleFonts.outfit(color: Colors.white)),
+                    backgroundColor: AppColors.red,
+                  ),
+                );
+                return;
+              }
+              Navigator.pop(context);
+              await _saveManualConnection(platform, handle);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: platform.color,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
+            ),
+            child: Text('Verify & Connect',
+                style: GoogleFonts.outfit(
+                    color: Colors.white, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _saveManualConnection(
+      SocialPlatform platform, String handle) async {
+    setState(() {
+      _isConnecting = true;
+      _currentlyConnectingPlatform = platform.name;
+      _connectError = null;
+    });
+
+    try {
+      // ── Verify directly via MetaApiService in Flutter frontend ──────────
+      final MetaVerifiedAccount? verified = await MetaApiService.resolve(
+        platform: platform.name,
+        handle: handle,
+      );
+
+      if (verified == null) {
+        throw Exception(
+            'Could not access this ${platform.name} account with the current Meta token. Check the URL and permissions, and confirm the client has authorized this account or that its Page is accessible to the token.');
+      }
+
+      final ConnectedSocialAccount enriched = ConnectedSocialAccount(
+        platform: platform.name,
+        accountId: verified.id,
+        accountName: verified.name.isEmpty ? _client.companyName : verified.name,
+        handle: verified.profileLink.isEmpty ? handle : verified.profileLink,
+        pageAccessToken: verified.pageAccessToken,
+        profilePicUrl:
+        verified.pictureUrl.isEmpty ? null : verified.pictureUrl,
+        followers: verified.followers,
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _connectedAccounts[platform.name] = enriched;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${platform.name} verified and connected successfully!',
+            style: GoogleFonts.outfit(
+                color: Colors.white, fontWeight: FontWeight.w600),
+          ),
+          backgroundColor: AppColors.green.withOpacity(0.9),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        setState(() => _connectError = 'Connection failed: $e');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Connection failed: $e',
+              style: GoogleFonts.outfit(color: Colors.white),
+            ),
+            backgroundColor: AppColors.red.withOpacity(0.9),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isConnecting = false;
+          _currentlyConnectingPlatform = null;
+        });
+      }
+    }
+  }
+
+  Future<void> _disconnectPlatform(SocialPlatform platform) async {
+    setState(() {
+      _connectedAccounts.remove(platform.name);
+    });
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '${platform.name} disconnected.',
+          style: GoogleFonts.outfit(
+              color: Colors.white, fontWeight: FontWeight.w600),
+        ),
+        backgroundColor: AppColors.amber.withOpacity(0.9),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  Widget _buildConnectedAccountsList() {
+    if (_connectedAccounts.isEmpty) {
+      return buildEmptyState(
+        icon: Icons.link_off_rounded,
+        title: 'No accounts connected',
+        subtitle:
+        'Tap "Connect" on a platform above to enter your business account handle/URL.',
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: _connectedAccounts.values.map((acc) {
+        final platform = kSocialPlatforms.firstWhere(
+              (p) => p.name == acc.platform,
+          orElse: () => kSocialPlatforms.first,
+        );
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: platform.color.withOpacity(0.35)),
+            boxShadow: [
+              BoxShadow(
+                color: platform.color.withOpacity(0.06),
+                blurRadius: 14,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  gradient: LinearGradient(
+                    colors: [
+                      platform.color.withOpacity(0.25),
+                      platform.color.withOpacity(0.08),
+                    ],
+                  ),
+                  border:
+                  Border.all(color: platform.color.withOpacity(0.4)),
+                ),
+                child: acc.profilePicUrl != null &&
+                    acc.profilePicUrl!.isNotEmpty
+                    ? ClipRRect(
+                  borderRadius: BorderRadius.circular(11),
+                  child: Image.network(
+                    acc.profilePicUrl!,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) =>
+                        Icon(platform.icon,
+                            color: platform.color, size: 22),
+                  ),
+                )
+                    : Icon(platform.icon, color: platform.color, size: 22),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      acc.accountName,
+                      style: GoogleFonts.outfit(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textDark,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    ),
+                    const SizedBox(height: 2),
+                    Row(
+                      children: [
+                        Icon(platform.icon, size: 11, color: platform.color),
+                        const SizedBox(width: 5),
+                        Flexible(
+                          child: Text(
+                            '${acc.handle} • ${acc.followers} followers',
+                            style: GoogleFonts.outfit(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w600,
+                              color: platform.color,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(50),
+                  color: AppColors.green.withOpacity(0.12),
+                  border:
+                  Border.all(color: AppColors.green.withOpacity(0.45)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.verified_rounded,
+                        size: 11, color: AppColors.green),
+                    const SizedBox(width: 4),
+                    Text(
+                      'API connected',
+                      style: GoogleFonts.outfit(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.green,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  // ═════════════════════════════════════════════════════════════════════════
+  // EXPANDABLE POST CARD & QUEUE
   // ═════════════════════════════════════════════════════════════════════════
   Widget _buildLivePostCard(ScheduledPost post) {
     final id = _postId(post);
@@ -616,9 +1483,6 @@ class _ClientDashboardState extends State<ClientDashboard> {
     );
   }
 
-  // ═════════════════════════════════════════════════════════════════════════
-  // ENHANCED QUEUE
-  // ═════════════════════════════════════════════════════════════════════════
   Widget _buildEnhancedQueue() {
     final scoped = _localScheduled
         .where((p) => p.clientName == _client.companyName)
@@ -782,285 +1646,6 @@ class _ClientDashboardState extends State<ClientDashboard> {
   }
 
   // ═════════════════════════════════════════════════════════════════════════
-  // SOCIAL TAB
-  // ═════════════════════════════════════════════════════════════════════════
-  Widget _buildSocialTab() {
-    return SingleChildScrollView(
-      physics: const BouncingScrollPhysics(),
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          buildSectionTitle('Social Accounts'),
-          const SizedBox(height: 4),
-          Text(
-            'Manage every social handle linked to ${_client.companyName}.',
-            style: GoogleFonts.outfit(
-                fontSize: 11.5, color: AppColors.textDarkMuted),
-          ),
-          const SizedBox(height: 16),
-          if (_showSocialForm)
-            SocialHandlesForm(
-              client: _client,
-              onSave: (updated) {
-                setState(() {
-                  _client = updated;
-                  _showSocialForm = false;
-                });
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      'Social handles saved for ${updated.companyName}',
-                      style: GoogleFonts.outfit(
-                          color: Colors.white, fontWeight: FontWeight.w600),
-                    ),
-                    backgroundColor: AppColors.green.withOpacity(0.9),
-                    behavior: SnackBarBehavior.floating,
-                  ),
-                );
-              },
-              onCancel: () => setState(() => _showSocialForm = false),
-            )
-          else
-            _socialOptionCard(
-              title: 'Add Handles',
-              subtitle:
-              'Link or update ${_client.companyName}\'s social media accounts.',
-              icon: Icons.add_link_rounded,
-              color: AppColors.purple,
-              onTap: () => setState(() => _showSocialForm = true),
-            ),
-          const SizedBox(height: 20),
-          buildSectionTitle(
-              'Connected Platforms (${_client.socialHandles.length})'),
-          const SizedBox(height: 4),
-          Text(
-            'Every platform linked to this client, shown as a clean list.',
-            style: GoogleFonts.outfit(
-                fontSize: 11.5, color: AppColors.textDarkMuted),
-          ),
-          const SizedBox(height: 12),
-          _buildConnectedPlatformsListView(),
-        ],
-      ),
-    );
-  }
-
-  Widget _socialOptionCard({
-    required String title,
-    required String subtitle,
-    required IconData icon,
-    required Color color,
-    required VoidCallback onTap,
-  }) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: color.withOpacity(0.35)),
-            boxShadow: [
-              BoxShadow(
-                color: color.withOpacity(0.08),
-                blurRadius: 16,
-                offset: const Offset(0, 6),
-              ),
-            ],
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(14),
-                  gradient: LinearGradient(
-                    colors: [
-                      color.withOpacity(0.25),
-                      color.withOpacity(0.08),
-                    ],
-                  ),
-                  border: Border.all(color: color.withOpacity(0.4)),
-                ),
-                child: Icon(icon, color: color, size: 22),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: GoogleFonts.outfit(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textDark,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      subtitle,
-                      style: GoogleFonts.outfit(
-                          fontSize: 12, color: AppColors.textDarkMuted),
-                    ),
-                  ],
-                ),
-              ),
-              Icon(Icons.arrow_forward_rounded, size: 16, color: color),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildConnectedPlatformsListView() {
-    final entries = <_ClientPlatformEntry>[];
-    for (final p in kSocialPlatforms) {
-      final handle = _client.socialHandles[p.name];
-      if (handle != null && handle.isNotEmpty) {
-        entries.add(_ClientPlatformEntry(
-          platform: p,
-          handle: handle,
-          metaConnected: _client.metaConnected[p.name] ?? false,
-        ));
-      }
-    }
-
-    if (entries.isEmpty) {
-      return buildEmptyState(
-        icon: Icons.link_off_rounded,
-        title: 'No platforms connected',
-        subtitle: 'Tap "Add Handles" above to link this client\'s accounts.',
-      );
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: entries
-          .map((e) => Padding(
-        padding: const EdgeInsets.only(bottom: 10),
-        child: _clientPlatformRow(e),
-      ))
-          .toList(),
-    );
-  }
-
-  Widget _clientPlatformRow(_ClientPlatformEntry e) {
-    final p = e.platform;
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: p.color.withOpacity(0.3)),
-        boxShadow: [
-          BoxShadow(
-            color: p.color.withOpacity(0.06),
-            blurRadius: 14,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              gradient: LinearGradient(
-                colors: [
-                  p.color.withOpacity(0.25),
-                  p.color.withOpacity(0.08),
-                ],
-              ),
-              border: Border.all(color: p.color.withOpacity(0.4)),
-            ),
-            child: Icon(p.icon, color: p.color, size: 22),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  p.name,
-                  style: GoogleFonts.outfit(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textDark,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Row(
-                  children: [
-                    Icon(p.icon, size: 11, color: p.color),
-                    const SizedBox(width: 5),
-                    Flexible(
-                      child: Text(
-                        e.handle,
-                        style: GoogleFonts.outfit(
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w600,
-                          color: p.color,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                        maxLines: 1,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(50),
-              color: (e.metaConnected ? AppColors.green : AppColors.amber)
-                  .withOpacity(0.15),
-              border: Border.all(
-                color: (e.metaConnected ? AppColors.green : AppColors.amber)
-                    .withOpacity(0.4),
-              ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  e.metaConnected
-                      ? Icons.verified_rounded
-                      : Icons.warning_amber_rounded,
-                  size: 11,
-                  color:
-                  e.metaConnected ? AppColors.green : AppColors.amber,
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  e.metaConnected ? 'Connected' : 'Pending',
-                  style: GoogleFonts.outfit(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                    color:
-                    e.metaConnected ? AppColors.green : AppColors.amber,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ═════════════════════════════════════════════════════════════════════════
   // OVERVIEW TAB
   // ═════════════════════════════════════════════════════════════════════════
   Widget _buildOverviewTab() {
@@ -1114,7 +1699,8 @@ class _ClientDashboardState extends State<ClientDashboard> {
           const SizedBox(height: 12),
           _clientInfoCard(),
           const SizedBox(height: 20),
-          buildSectionTitle('Connected Platforms'),
+          buildSectionTitle(
+              'Connected Platforms (${_connectedAccounts.length})'),
           const SizedBox(height: 12),
           _connectedPlatformsWrap(),
           const SizedBox(height: 20),
@@ -1274,28 +1860,23 @@ class _ClientDashboardState extends State<ClientDashboard> {
   }
 
   Widget _connectedPlatformsWrap() {
-    if (widget.client.socialHandles.isEmpty) {
+    if (_connectedAccounts.isEmpty) {
       return buildEmptyState(
         icon: Icons.link_off_rounded,
-        title: 'No handles linked',
-        subtitle: 'Add handles from Social Accounts → Add Handles.',
+        title: 'No accounts connected',
+        subtitle: 'Go to the Social tab to connect your pages.',
       );
     }
+
     return Wrap(
       spacing: 8,
       runSpacing: 8,
-      children: widget.client.socialHandles.entries.map((e) {
+      children: _connectedAccounts.values.map((acc) {
         final p = kSocialPlatforms.firstWhere(
-              (sp) => sp.name == e.key,
-          orElse: () => SocialPlatform(
-            name: e.key,
-            icon: Icons.share_rounded,
-            color: AppColors.cyan,
-            handlePrefix: '@',
-            allowedContentTypes: const ['Post'],
-          ),
+              (sp) => sp.name == acc.platform,
+          orElse: () => kSocialPlatforms.first,
         );
-        final meta = widget.client.metaConnected[e.key] ?? false;
+
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           decoration: BoxDecoration(
@@ -1309,24 +1890,22 @@ class _ClientDashboardState extends State<ClientDashboard> {
               Icon(p.icon, size: 12, color: p.color),
               const SizedBox(width: 6),
               Text(
-                '${p.name} ${e.value}',
+                '${p.name} • ${acc.accountName} (${acc.handle})',
                 style: GoogleFonts.outfit(
                   fontSize: 11,
                   fontWeight: FontWeight.w600,
                   color: p.color,
                 ),
               ),
-              if (meta) ...[
-                const SizedBox(width: 4),
-                Container(
-                  width: 6,
-                  height: 6,
-                  decoration: const BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: AppColors.green,
-                  ),
+              const SizedBox(width: 4),
+              Container(
+                width: 6,
+                height: 6,
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: AppColors.green,
                 ),
-              ],
+              ),
             ],
           ),
         );
@@ -1646,9 +2225,7 @@ class _ClientDashboardState extends State<ClientDashboard> {
   }
 
   Widget _calendarPlatformDropdown() {
-    final available = kSocialPlatforms
-        .where((p) => (_client.socialHandles[p.name] ?? '').isNotEmpty)
-        .toList();
+    final available = _connectedAccounts.keys.toList();
 
     return PopupMenuButton<String?>(
       tooltip: 'Filter by platform',
@@ -1667,23 +2244,29 @@ class _ClientDashboardState extends State<ClientDashboard> {
             ),
           ),
         ),
-        ...available.map((p) => PopupMenuItem<String?>(
-          value: p.name,
-          child: Row(
-            children: [
-              Icon(p.icon, size: 14, color: p.color),
-              const SizedBox(width: 8),
-              Text(
-                p.name,
-                style: GoogleFonts.outfit(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textDark,
+        ...available.map((name) {
+          final p = kSocialPlatforms.firstWhere(
+                (sp) => sp.name == name,
+            orElse: () => kSocialPlatforms.first,
+          );
+          return PopupMenuItem<String?>(
+            value: p.name,
+            child: Row(
+              children: [
+                Icon(p.icon, size: 14, color: p.color),
+                const SizedBox(width: 8),
+                Text(
+                  p.name,
+                  style: GoogleFonts.outfit(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textDark,
+                  ),
                 ),
-              ),
-            ],
-          ),
-        )),
+              ],
+            ),
+          );
+        }),
       ],
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
@@ -2169,9 +2752,6 @@ class _ClientDashboardState extends State<ClientDashboard> {
     );
   }
 
-  // ═════════════════════════════════════════════════════════════════════════
-  // PDF EXPORT — FIXED: no pw.Expanded outside bounded Row
-  // ═════════════════════════════════════════════════════════════════════════
   Future<void> _exportAnalyticsPdf() async {
     if (_isExporting) return;
     setState(() => _isExporting = true);
@@ -2308,8 +2888,8 @@ class _ClientDashboardState extends State<ClientDashboard> {
                     _pdfInfoRow(
                         'Website', _client.website, baseFont, boldFont),
                   _pdfInfoRow(
-                    'Social Handles',
-                    '${_client.socialHandles.length} connected',
+                    'Connected Accounts',
+                    '${_connectedAccounts.length} connected',
                     baseFont,
                     boldFont,
                   ),
@@ -2581,8 +3161,6 @@ class _ClientDashboardState extends State<ClientDashboard> {
     );
   }
 
-  // FIXED: returns a plain pw.Container, not pw.Expanded.
-  // Caller wraps it in pw.Expanded when needed.
   pw.Widget _pdfKpiCard(
       String label,
       int value,
@@ -2712,231 +3290,7 @@ class _ClientDashboardState extends State<ClientDashboard> {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// SOCIAL HANDLES FORM
-// ═════════════════════════════════════════════════════════════════════════════
-class SocialHandlesForm extends StatefulWidget {
-  final ClientModel client;
-  final ValueChanged<ClientModel> onSave;
-  final VoidCallback onCancel;
-
-  const SocialHandlesForm({
-    super.key,
-    required this.client,
-    required this.onSave,
-    required this.onCancel,
-  });
-
-  @override
-  State<SocialHandlesForm> createState() => _SocialHandlesFormState();
-}
-
-class _SocialHandlesFormState extends State<SocialHandlesForm> {
-  late final Map<String, TextEditingController> _controllers;
-  late final Map<String, bool> _metaConnected;
-
-  @override
-  void initState() {
-    super.initState();
-    _controllers = {};
-    _metaConnected = {};
-    for (final p in kSocialPlatforms) {
-      _controllers[p.name] = TextEditingController(
-        text: widget.client.socialHandles[p.name] ?? '',
-      );
-      _metaConnected[p.name] = widget.client.metaConnected[p.name] ?? false;
-    }
-  }
-
-  @override
-  void dispose() {
-    for (final c in _controllers.values) {
-      c.dispose();
-    }
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.borderLight),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            'Manage Social Handles',
-            style: GoogleFonts.bricolageGrotesque(
-              fontSize: 16,
-              fontWeight: FontWeight.w800,
-              color: AppColors.textDark,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Enter usernames or profile links and toggle Meta connection.',
-            style: GoogleFonts.outfit(
-              fontSize: 11.5,
-              color: AppColors.textDarkMuted,
-            ),
-          ),
-          const SizedBox(height: 14),
-          ...kSocialPlatforms.map((platform) {
-            final controller = _controllers[platform.name]!;
-            final isConnected = _metaConnected[platform.name] ?? false;
-            return Container(
-              margin: const EdgeInsets.only(bottom: 12),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppColors.scaffoldLight,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: platform.color.withOpacity(0.3)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(platform.icon, size: 18, color: platform.color),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          platform.name,
-                          style: GoogleFonts.outfit(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.textDark,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      Switch.adaptive(
-                        value: isConnected,
-                        activeColor: AppColors.green,
-                        onChanged: (val) {
-                          setState(() {
-                            _metaConnected[platform.name] = val;
-                          });
-                        },
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: controller,
-                    style: GoogleFonts.outfit(
-                        color: AppColors.textDark, fontSize: 13),
-                    decoration: InputDecoration(
-                      hintText:
-                      '${platform.handlePrefix}username or profile URL',
-                      hintStyle: GoogleFonts.outfit(
-                          color: AppColors.textDarkMuted, fontSize: 12),
-                      filled: true,
-                      fillColor: Colors.white,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        borderSide: BorderSide(color: AppColors.borderLight),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        borderSide: BorderSide(color: AppColors.borderLight),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        borderSide:
-                        BorderSide(color: platform.color, width: 1.4),
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 10),
-                    ),
-                  ),
-                ],
-              ),
-            );
-          }),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: widget.onCancel,
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    side: BorderSide(color: AppColors.borderLight),
-                  ),
-                  child: Text(
-                    'Cancel',
-                    style: GoogleFonts.outfit(
-                      color: AppColors.textDark,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: ElevatedButton(
-                  onPressed: () {
-                    final newHandles = <String, String>{};
-                    final newMeta = <String, bool>{};
-                    for (final p in kSocialPlatforms) {
-                      final text = _controllers[p.name]!.text.trim();
-                      if (text.isNotEmpty) {
-                        newHandles[p.name] = text;
-                        newMeta[p.name] = _metaConnected[p.name] ?? false;
-                      }
-                    }
-                    final updatedClient = ClientModel(
-                      companyName: widget.client.companyName,
-                      logoColor: widget.client.logoColor,
-                      logoBytes: widget.client.logoBytes,
-                      logoUrl: widget.client.logoUrl,
-                      address: widget.client.address,
-                      website: widget.client.website,
-                      mobile: widget.client.mobile,
-                      email: widget.client.email,
-                      socialHandles: newHandles,
-                      metaConnected: newMeta,
-                    );
-                    widget.onSave(updatedClient);
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.purple,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    elevation: 0,
-                  ),
-                  child: Text(
-                    'Save Handles',
-                    style: GoogleFonts.outfit(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ═════════════════════════════════════════════════════════════════════════════
-// LIVE COUNTER WIDGET — FIXED: uses IntrinsicHeight + no Expanded abuse
+// LIVE COUNTER WIDGET
 // ═════════════════════════════════════════════════════════════════════════════
 class _LiveCounter extends StatelessWidget {
   final IconData icon;
@@ -3036,18 +3390,6 @@ class _ClientTab {
   _ClientTab(this.label, this.icon, this.color);
 }
 
-class _ClientPlatformEntry {
-  final SocialPlatform platform;
-  final String handle;
-  final bool metaConnected;
-
-  _ClientPlatformEntry({
-    required this.platform,
-    required this.handle,
-    required this.metaConnected,
-  });
-}
-
 // ═════════════════════════════════════════════════════════════════════════════
 // CLIENT CREATE CONTENT FORM
 // ═════════════════════════════════════════════════════════════════════════════
@@ -3056,6 +3398,7 @@ class ClientCreateContentForm extends StatefulWidget {
   final ValueChanged<ScheduledPost> onSave;
   final VoidCallback onCancel;
   final ClientModel? lockedClient;
+  final Map<String, ConnectedSocialAccount>? connectedAccounts;
 
   const ClientCreateContentForm({
     super.key,
@@ -3063,6 +3406,7 @@ class ClientCreateContentForm extends StatefulWidget {
     required this.onSave,
     required this.onCancel,
     this.lockedClient,
+    this.connectedAccounts,
   });
 
   @override
@@ -3133,11 +3477,14 @@ class _ClientCreateContentFormState extends State<ClientCreateContentForm> {
     if (_selectedPlatform == null) {
       return const ['Post', 'Reel', 'Story', 'Video'];
     }
-    final platform = kSocialPlatforms.firstWhere(
-          (p) => p.name == _selectedPlatform,
-      orElse: () => kSocialPlatforms.first,
-    );
-    return platform.allowedContentTypes;
+    final matches = kSocialPlatforms
+        .where((p) => p.name == _selectedPlatform)
+        .toList();
+    if (matches.isEmpty) {
+      return const ['Post'];
+    }
+    final types = matches.first.allowedContentTypes;
+    return types.isEmpty ? const ['Post'] : types;
   }
 
   Future<void> _pickMedia() async {
@@ -3254,17 +3601,21 @@ class _ClientCreateContentFormState extends State<ClientCreateContentForm> {
   }
 
   Widget _buildFormScreen() {
-    final availablePlatforms = _selectedClient == null
-        ? <SocialPlatform>[]
-        : kSocialPlatforms
-        .where((p) => _selectedClient!.socialHandles.containsKey(p.name))
-        .toList();
+    final accounts = widget.connectedAccounts ?? const {};
+    final availablePlatforms = <SocialPlatform>[];
+    for (final name in accounts.keys) {
+      final matches =
+      kSocialPlatforms.where((p) => p.name == name).toList();
+      if (matches.isNotEmpty) availablePlatforms.add(matches.first);
+    }
 
     final allowedTypes = _allowedContentTypes;
 
     if (_selectedPlatform != null && !allowedTypes.contains(_contentType)) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) setState(() => _contentType = allowedTypes.first);
+        if (mounted && allowedTypes.isNotEmpty) {
+          setState(() => _contentType = allowedTypes.first);
+        }
       });
     }
 
@@ -3309,7 +3660,8 @@ class _ClientCreateContentFormState extends State<ClientCreateContentForm> {
                   value: c,
                   child: Text(
                     c.companyName,
-                    style: GoogleFonts.outfit(color: AppColors.textDark),
+                    style:
+                    GoogleFonts.outfit(color: AppColors.textDark),
                   ),
                 ))
                     .toList(),
@@ -3324,7 +3676,7 @@ class _ClientCreateContentFormState extends State<ClientCreateContentForm> {
               ),
               const SizedBox(height: 16),
               if (_selectedClient != null) ...[
-                _stepLabel('Step 2 — Select Social Account'),
+                _stepLabel('Step 2 — Select Connected Account'),
                 const SizedBox(height: 8),
                 if (availablePlatforms.isEmpty)
                   Container(
@@ -3335,10 +3687,19 @@ class _ClientCreateContentFormState extends State<ClientCreateContentForm> {
                       border:
                       Border.all(color: AppColors.amber.withOpacity(0.3)),
                     ),
-                    child: Text(
-                      'This client has no social handles configured.',
-                      style: GoogleFonts.outfit(
-                          fontSize: 12, color: AppColors.amber),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.info_outline_rounded,
+                            size: 16, color: AppColors.amber),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'No connected accounts yet. Go to the Social tab to connect your pages.',
+                            style: GoogleFonts.outfit(
+                                fontSize: 12, color: AppColors.amber),
+                          ),
+                        ),
+                      ],
                     ),
                   )
                 else
@@ -3347,15 +3708,18 @@ class _ClientCreateContentFormState extends State<ClientCreateContentForm> {
                     runSpacing: 8,
                     children: availablePlatforms.map((p) {
                       final isSelected = _selectedPlatform == p.name;
-                      final handle =
-                          _selectedClient!.socialHandles[p.name] ?? '';
+                      final acc = accounts[p.name];
+                      if (acc == null) return const SizedBox.shrink();
                       return GestureDetector(
                         onTap: () => setState(() {
                           _selectedPlatform = p.name;
                           _mediaList.clear();
                           _youTubeThumbnailIndex = null;
-                          if (!p.allowedContentTypes.contains(_contentType)) {
-                            _contentType = p.allowedContentTypes.first;
+                          final types = p.allowedContentTypes.isEmpty
+                              ? const ['Post']
+                              : p.allowedContentTypes;
+                          if (!types.contains(_contentType)) {
+                            _contentType = types.first;
                           }
                         }),
                         child: Container(
@@ -3390,14 +3754,14 @@ class _ClientCreateContentFormState extends State<ClientCreateContentForm> {
                                       color: AppColors.textDark,
                                     ),
                                   ),
-                                  if (handle.isNotEmpty)
-                                    Text(
-                                      handle,
-                                      style: GoogleFonts.outfit(
-                                        fontSize: 9.5,
-                                        color: AppColors.textDarkMuted,
-                                      ),
+                                  Text(
+                                    acc.handle,
+                                    style: GoogleFonts.outfit(
+                                      fontSize: 9.5,
+                                      color: AppColors.textDarkMuted,
                                     ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
                                 ],
                               ),
                             ],
@@ -3521,7 +3885,8 @@ class _ClientCreateContentFormState extends State<ClientCreateContentForm> {
                 if (!_hideTitleField) ...[
                   TextFormField(
                     controller: _title,
-                    validator: (v) => v!.isEmpty ? 'Required' : null,
+                    validator: (v) =>
+                    (v == null || v.trim().isEmpty) ? 'Required' : null,
                     style: GoogleFonts.outfit(color: AppColors.textDark),
                     decoration: _inputDecoration('Post Title'),
                   ),
@@ -3559,7 +3924,8 @@ class _ClientCreateContentFormState extends State<ClientCreateContentForm> {
                 TextFormField(
                   controller: _caption,
                   maxLines: 3,
-                  validator: (v) => v!.isEmpty ? 'Required' : null,
+                  validator: (v) =>
+                  (v == null || v.trim().isEmpty) ? 'Required' : null,
                   style: GoogleFonts.outfit(color: AppColors.textDark),
                   decoration: _inputDecoration('Caption & Hashtags'),
                 ),
@@ -3925,7 +4291,7 @@ class _ClientCreateContentFormState extends State<ClientCreateContentForm> {
   }
 
   void _openPreview() {
-    if (!_formKey.currentState!.validate() && !_hideTitleField) return;
+    if (!_hideTitleField && !_formKey.currentState!.validate()) return;
     if (_selectedClient == null || _selectedPlatform == null) return;
     if (_mediaList.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -4144,13 +4510,14 @@ class _ClientCreateContentFormState extends State<ClientCreateContentForm> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        _selectedClient!.socialHandles['Instagram'] ??
+                        _accountHandleFor(_selectedPlatform) ??
                             _selectedClient!.companyName,
                         style: GoogleFonts.outfit(
                           color: Colors.white,
                           fontWeight: FontWeight.w700,
                           fontSize: 13,
                         ),
+                        overflow: TextOverflow.ellipsis,
                       ),
                       Text(
                         _contentType == 'Story'
@@ -4345,7 +4712,7 @@ class _ClientCreateContentFormState extends State<ClientCreateContentForm> {
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  _selectedClient!.socialHandles['Threads'] ??
+                  _accountHandleFor('Threads') ??
                       _selectedClient!.companyName,
                   style: GoogleFonts.outfit(
                     color: AppColors.textDark,
@@ -4677,8 +5044,8 @@ class _ClientCreateContentFormState extends State<ClientCreateContentForm> {
                         color: AppColors.cyan, size: 64),
                     const SizedBox(height: 8),
                     Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12),
+                      padding:
+                      const EdgeInsets.symmetric(horizontal: 12),
                       child: Text(
                         m.fileName,
                         textAlign: TextAlign.center,
@@ -4717,7 +5084,14 @@ class _ClientCreateContentFormState extends State<ClientCreateContentForm> {
     return n.isNotEmpty ? n[0].toUpperCase() : '?';
   }
 
+  String? _accountHandleFor(String? platformName) {
+    if (platformName == null) return null;
+    return widget.connectedAccounts?[platformName]?.handle;
+  }
+
   void _confirmSchedule() {
+    if (_selectedClient == null || _selectedPlatform == null) return;
+
     final finalDate = DateTime(
       _scheduledDate.year,
       _scheduledDate.month,
