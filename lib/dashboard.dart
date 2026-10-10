@@ -23,7 +23,7 @@ class Dashboard extends StatefulWidget {
   State<Dashboard> createState() => DashboardState();
 }
 
-class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
+class DashboardState extends State<Dashboard> {
   int _selectedIndex = 0;
   bool _sidebarCollapsed = false;
   String _activeSubSection = '';
@@ -44,11 +44,6 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
 
   bool _isLoadingClients = false;
   String? _loadError;
-
-  late AnimationController _bgAnimationController;
-  late AnimationController _glowAnimationController;
-  late Animation<double> _bgAnimation;
-  late Animation<double> _glowAnimation;
 
   static const String _apiBase = 'http://192.168.1.17/socialee_sphere';
 
@@ -84,25 +79,6 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
-    _bgAnimationController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 8),
-    )..repeat(reverse: true);
-
-    _glowAnimationController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 3),
-    )..repeat(reverse: true);
-
-    _bgAnimation = Tween<double>(begin: 0, end: 1).animate(
-      CurvedAnimation(parent: _bgAnimationController, curve: Curves.easeInOut),
-    );
-
-    _glowAnimation = Tween<double>(begin: 0.3, end: 0.7).animate(
-      CurvedAnimation(parent: _glowAnimationController, curve: Curves.easeInOut),
-    );
-
-    // Defer API + static seeding to avoid layout hit-test errors
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _seedStaticPostsAndMedia();
@@ -124,28 +100,38 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
     Uri.parse('$_apiBase/register_company.php?agency_name=$encodedAgency');
 
     try {
-      final response = await http.get(url);
+      final response =
+      await http.get(url).timeout(const Duration(seconds: 15));
       if (!mounted) return;
 
       if (response.statusCode != 200) {
-        throw Exception('HTTP error ${response.statusCode}');
+        throw Exception('HTTP ${response.statusCode}: ${response.body}');
       }
 
       final dynamic jsonResponse = jsonDecode(response.body);
-      if (jsonResponse is! Map || jsonResponse['status'] != true) {
+      if (jsonResponse is! Map) {
+        throw Exception('Invalid JSON: expected Map');
+      }
+
+      final status = jsonResponse['status'];
+      final isSuccess = status == true ||
+          status == 'true' ||
+          status == 1 ||
+          status == '1';
+
+      if (!isSuccess) {
         throw Exception(
-            (jsonResponse is Map ? jsonResponse['message'] : null) ??
-                'Invalid API response');
+          jsonResponse['message']?.toString() ?? 'API returned failure',
+        );
       }
 
       final List<dynamic> list =
-      (jsonResponse['data'] ?? []) as List<dynamic>;
-      final parsed = <ClientModel>[];
+      (jsonResponse['data'] ?? const []) as List<dynamic>;
 
+      final parsed = <ClientModel>[];
       for (final raw in list) {
         if (raw is! Map) continue;
 
-        // ── Social handles
         final handles = <String, String>{};
         final rawHandles = (raw['social_media_handel'] ?? '').toString();
         if (rawHandles.isNotEmpty) {
@@ -161,15 +147,11 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
           }
         }
 
-        // ── Logo — prefer resolved URL, fall back to base64
         Uint8List? logoBytes;
         String? logoUrl;
 
-        final String logoPath =
-        (raw['logo_path'] ?? '').toString().trim();
-        final String logoRaw =
-        (raw['logo_raw'] ?? '').toString().trim();
-
+        final String logoPath = (raw['logo_path'] ?? '').toString().trim();
+        final String logoRaw = (raw['logo_raw'] ?? '').toString().trim();
         final String candidate = logoPath.isNotEmpty ? logoPath : logoRaw;
 
         if (candidate.isNotEmpty) {
@@ -187,19 +169,14 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
               if (commaIdx != -1) {
                 logoBytes = base64Decode(candidate.substring(commaIdx + 1));
               }
-            } catch (e) {
-              debugPrint('Data URI logo decode failed: $e');
-            }
+            } catch (_) {}
           } else {
             try {
               logoBytes = base64Decode(candidate);
-            } catch (e) {
-              debugPrint('Raw base64 logo decode failed: $e');
-            }
+            } catch (_) {}
           }
         }
 
-        // ── Logo color
         Color color = AppColors.purple;
         final rawColor = (raw['logo_color'] ?? '').toString().trim();
         if (rawColor.isNotEmpty) {
@@ -217,7 +194,7 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
           companyName: (raw['company_name'] ?? '').toString(),
           logoColor: color,
           logoBytes: logoBytes,
-          logoUrl: logoUrl, // ← server URL from uploads/
+          logoUrl: logoUrl,
           address: (raw['address'] ?? '').toString(),
           website: (raw['website'] ?? '').toString(),
           mobile: (raw['mobile_number'] ?? '').toString(),
@@ -233,17 +210,13 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
           ..clear()
           ..addAll(parsed);
         _isLoadingClients = false;
-        if (_clients.isEmpty) {
-          _seedDemoData();
-        }
       });
-    } catch (e) {
-      debugPrint('API fetch failed, falling back to static data: $e');
+    } catch (e, st) {
+      debugPrint('API fetch failed: $e\n$st');
       if (!mounted) return;
       setState(() {
         _isLoadingClients = false;
         _loadError = e.toString();
-        _seedDemoData();
       });
     }
   }
@@ -252,10 +225,6 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
   Future<bool> _saveClientToApi(ClientModel client) async {
     final url = Uri.parse('$_apiBase/register_company.php');
 
-    // ── Build the logo payload.
-    // Priority 1: freshly picked bytes → send as data URI so PHP
-    //            knows the correct MIME (png/jpg/webp/etc).
-    // Priority 2: existing server URL → keep as-is so we don't wipe it.
     String logoData = '';
     if (client.logoBytes != null && client.logoBytes!.isNotEmpty) {
       final b64 = base64Encode(client.logoBytes!);
@@ -290,7 +259,9 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
 
       if (response.statusCode == 200) {
         final body = jsonDecode(response.body);
-        if (body['status'] == true) {
+        final status = body['status'];
+        final ok = status == true || status == 'true' || status == 1;
+        if (ok) {
           _showSnack(
               body['message']?.toString() ?? 'Client saved successfully!',
               AppColors.green);
@@ -311,22 +282,17 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
     }
   }
 
-  /// Very small magic-number sniffer so we can send the right MIME
-  /// prefix in the data URI. Falls back to image/png.
   String _guessImageMime(Uint8List bytes) {
     if (bytes.length >= 8) {
-      // PNG: 89 50 4E 47 0D 0A 1A 0A
       if (bytes[0] == 0x89 &&
           bytes[1] == 0x50 &&
           bytes[2] == 0x4E &&
           bytes[3] == 0x47) {
         return 'image/png';
       }
-      // JPEG: FF D8 FF
       if (bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF) {
         return 'image/jpeg';
       }
-      // GIF: 47 49 46 38
       if (bytes[0] == 0x47 &&
           bytes[1] == 0x49 &&
           bytes[2] == 0x46 &&
@@ -335,7 +301,6 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
       }
     }
     if (bytes.length >= 12) {
-      // WEBP: RIFF....WEBP
       if (bytes[0] == 0x52 &&
           bytes[1] == 0x49 &&
           bytes[2] == 0x46 &&
@@ -367,46 +332,8 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
     }
   }
 
-  void _seedDemoData() {
-    if (_clients.isNotEmpty) return;
-    _clients.addAll([
-      ClientModel(
-        companyName: 'TechNova Solutions',
-        logoColor: AppColors.purple,
-        logoBytes: null,
-        logoUrl: null,
-        address: 'Bengaluru, India',
-        website: 'technova.io',
-        mobile: '+91 98765 43210',
-        email: 'hello@technova.io',
-        socialHandles: {
-          'Facebook': '@technova',
-          'Instagram': '@technova.io',
-        },
-        metaConnected: {'Facebook': true, 'Instagram': true},
-      ),
-      ClientModel(
-        companyName: 'Bloom Cafe',
-        logoColor: AppColors.pink,
-        logoBytes: null,
-        logoUrl: null,
-        address: 'Mumbai, India',
-        website: 'bloomcafe.in',
-        mobile: '+91 91234 56789',
-        email: 'hi@bloomcafe.in',
-        socialHandles: {
-          'Instagram': '@bloomcafe',
-          'YouTube': '@bloomcafe',
-        },
-        metaConnected: {'Instagram': true},
-      ),
-    ]);
-  }
-
   @override
   void dispose() {
-    _bgAnimationController.dispose();
-    _glowAnimationController.dispose();
     super.dispose();
   }
 
@@ -416,6 +343,9 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
     final isMobile = size.width < 768;
     final isTablet = size.width >= 768 && size.width < 1200;
 
+    final sidebarWidth =
+    _sidebarCollapsed ? 92.0 : (isTablet ? 220.0 : 260.0);
+
     return Scaffold(
       key: _scaffoldKey,
       backgroundColor: AppColors.scaffoldLight,
@@ -423,43 +353,26 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
       body: Row(
         children: [
           if (!isMobile)
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 280),
-              curve: Curves.easeOutCubic,
-              width: _sidebarCollapsed ? 92 : (isTablet ? 220 : 260),
+            SizedBox(
+              width: sidebarWidth,
               child: ClipRect(
-                child: AnimatedBuilder(
-                  animation: _bgAnimation,
-                  builder: (context, _) => Container(
-                    margin: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          Color.lerp(const Color(0xFF0A0E27),
-                              const Color(0xFF1A0B2E), _bgAnimation.value)!,
-                          Color.lerp(const Color(0xFF1E1B4B),
-                              const Color(0xFF2D1B69), _bgAnimation.value)!,
-                          Color.lerp(const Color(0xFF311042),
-                              const Color(0xFF0F172A), _bgAnimation.value)!,
-                        ],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                          color: AppColors.cyan.withOpacity(0.2), width: 1),
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppColors.purple.withOpacity(0.15),
-                          blurRadius: 30,
-                          offset: const Offset(0, 10),
-                        ),
+                child: Container(
+                  margin: const EdgeInsets.all(10),
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        Color(0xFF0A0E27),
+                        Color(0xFF1E1B4B),
+                        Color(0xFF311042),
                       ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
                     ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(20),
-                      child: _buildSidebar(isMobile: false, isTablet: isTablet),
-                    ),
+                    borderRadius: BorderRadius.all(Radius.circular(20)),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(20),
+                    child: _buildSidebar(isMobile: false, isTablet: isTablet),
                   ),
                 ),
               ),
@@ -498,8 +411,6 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 physics: const ClampingScrollPhysics(),
                 itemCount: _menuItems.length,
-                addAutomaticKeepAlives: false,
-                addRepaintBoundaries: true,
                 itemBuilder: (context, index) =>
                     _buildMenuItem(index, forceExpanded: true),
               ),
@@ -558,26 +469,22 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
       return Padding(
         padding: const EdgeInsets.fromLTRB(8, 16, 8, 8),
         child: Center(
-          child: AnimatedBuilder(
-            animation: _glowAnimation,
-            builder: (context, _) => Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(12),
-                gradient: AppColors.primaryGradient,
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.cyan
-                        .withOpacity(_glowAnimation.value * 0.6),
-                    blurRadius: 16,
-                    spreadRadius: 1,
-                  ),
-                ],
-              ),
-              child: const Icon(Icons.rocket_launch_rounded,
-                  color: Colors.white, size: 22),
+          child: Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              gradient: AppColors.primaryGradient,
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.cyan.withOpacity(0.4),
+                  blurRadius: 12,
+                  spreadRadius: 1,
+                ),
+              ],
             ),
+            child: const Icon(Icons.rocket_launch_rounded,
+                color: Colors.white, size: 22),
           ),
         ),
       );
@@ -590,26 +497,22 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
         child: ClipRect(
           child: Row(
             children: [
-              AnimatedBuilder(
-                animation: _glowAnimation,
-                builder: (context, _) => Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12),
-                    gradient: AppColors.primaryGradient,
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.cyan
-                            .withOpacity(_glowAnimation.value * 0.6),
-                        blurRadius: 16,
-                        spreadRadius: 1,
-                      ),
-                    ],
-                  ),
-                  child: const Icon(Icons.rocket_launch_rounded,
-                      color: Colors.white, size: 22),
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  gradient: AppColors.primaryGradient,
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.cyan.withOpacity(0.4),
+                      blurRadius: 12,
+                      spreadRadius: 1,
+                    ),
+                  ],
                 ),
+                child: const Icon(Icons.rocket_launch_rounded,
+                    color: Colors.white, size: 22),
               ),
               const SizedBox(width: 10),
               Flexible(
@@ -1070,8 +973,7 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
       child: InkWell(
         onTap: () => _confirmLogout(),
         borderRadius: BorderRadius.circular(50),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
+        child: Container(
           padding: EdgeInsets.symmetric(
             horizontal: showLabel ? 12 : 8,
             vertical: 6,
@@ -1266,13 +1168,13 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
       case 0:
         return _buildOverviewSection();
       case 1:
-        if (_activeSubSection == 'Add Client') return _buildAddClientForm();
-        return _buildClientsList();
+        return _activeSubSection == 'Add Client'
+            ? _buildAddClientForm()
+            : _buildClientsList();
       case 2:
-        if (_activeSubSection == 'All Platforms') {
-          return _buildAllPlatformsScreen();
-        }
-        return _buildSocialAccountsOverview();
+        return _activeSubSection == 'All Platforms'
+            ? _buildAllPlatformsScreen()
+            : _buildSocialAccountsOverview();
       default:
         return _buildOverviewSection();
     }
@@ -1440,19 +1342,26 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
         children: [
           Icon(icon, color: color, size: 20),
           const SizedBox(width: 12),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(label,
-                  style: GoogleFonts.outfit(
-                      fontSize: 11, color: AppColors.textDarkMuted)),
-              Text(value,
-                  style: GoogleFonts.bricolageGrotesque(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.textDark)),
-            ],
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(label,
+                    style: GoogleFonts.outfit(
+                        fontSize: 11, color: AppColors.textDarkMuted),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1),
+                Text(value,
+                    style: GoogleFonts.bricolageGrotesque(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.textDark),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1),
+              ],
+            ),
           ),
         ],
       ),
@@ -1461,85 +1370,105 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
 
   // ── CLIENT LIST SECTION ──────────────────────────────────────────────────
   Widget _buildClientsList() {
-    return _scrollWrapper(children: [
-      Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          buildSectionTitle('Client List (${_clients.length})'),
-          TextButton.icon(
-            onPressed: () => setState(() {
-              _activeSubSection = 'Add Client';
-              _expandedMenus['clients'] = true;
-            }),
-            icon: const Icon(Icons.add_rounded,
-                size: 16, color: AppColors.purple),
-            label: Text('Add Client',
-                style: GoogleFonts.outfit(
-                    color: AppColors.purple, fontWeight: FontWeight.w600)),
-          ),
-        ],
-      ),
-      const SizedBox(height: 4),
-      Text(
-        'Tap a card to open its dashboard. Use "Show more" for details, or "Add Handles" to link social media.',
-        style:
-        GoogleFonts.outfit(fontSize: 11.5, color: AppColors.textDarkMuted),
-      ),
-      const SizedBox(height: 12),
-      Row(
-        children: [
-          TextButton.icon(
-            onPressed: _isLoadingClients ? null : _fetchClientsFromApi,
-            icon: Icon(Icons.refresh_rounded,
-                size: 16,
-                color: _isLoadingClients
-                    ? AppColors.textDarkMuted
-                    : AppColors.cyan),
-            label: Text(
-              _isLoadingClients ? 'Refreshing...' : 'Refresh',
-              style: GoogleFonts.outfit(
-                color: _isLoadingClients
-                    ? AppColors.textDarkMuted
-                    : AppColors.cyan,
-                fontWeight: FontWeight.w600,
-                fontSize: 12,
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              buildSectionTitle('Client List (${_clients.length})'),
+              TextButton.icon(
+                onPressed: () => setState(() {
+                  _activeSubSection = 'Add Client';
+                  _expandedMenus['clients'] = true;
+                }),
+                icon: const Icon(Icons.add_rounded,
+                    size: 16, color: AppColors.purple),
+                label: Text('Add Client',
+                    style: GoogleFonts.outfit(
+                        color: AppColors.purple, fontWeight: FontWeight.w600)),
               ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Tap a card to open its dashboard. Use "Show more" for details, or "Add Handles" to link social media.',
+            style: GoogleFonts.outfit(
+                fontSize: 11.5, color: AppColors.textDarkMuted),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              TextButton.icon(
+                onPressed: _isLoadingClients ? null : _fetchClientsFromApi,
+                icon: Icon(Icons.refresh_rounded,
+                    size: 16,
+                    color: _isLoadingClients
+                        ? AppColors.textDarkMuted
+                        : AppColors.cyan),
+                label: Text(
+                  _isLoadingClients ? 'Refreshing...' : 'Refresh',
+                  style: GoogleFonts.outfit(
+                    color: _isLoadingClients
+                        ? AppColors.textDarkMuted
+                        : AppColors.cyan,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Expanded(
+            child: _isLoadingClients && _clients.isEmpty
+                ? const Center(child: CircularProgressIndicator())
+                : _clients.isEmpty
+                ? SingleChildScrollView(
+              physics: const BouncingScrollPhysics(),
+              child: buildEmptyState(
+                icon: Icons.people_outline_rounded,
+                title: 'No clients yet',
+                subtitle: _loadError == null
+                    ? 'Register your first client to get started.'
+                    : 'Could not load clients. Tap Refresh to try again.',
+              ),
+            )
+                : ListView.builder(
+              physics: const BouncingScrollPhysics(),
+              itemCount: _clients.length,
+              itemBuilder: (context, index) {
+                final client = _clients[index];
+                return KeyedSubtree(
+                  key: ValueKey(
+                    'client_${client.companyName}_${client.email}',
+                  ),
+                  child: _buildClientCard(client),
+                );
+              },
             ),
           ),
+          if (_loadError != null) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppColors.amber.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AppColors.amber.withOpacity(0.3)),
+              ),
+              child: Text(
+                '⚠ $_loadError',
+                style:
+                GoogleFonts.outfit(fontSize: 10.5, color: AppColors.amber),
+              ),
+            ),
+          ],
         ],
       ),
-      const SizedBox(height: 8),
-      if (_isLoadingClients && _clients.isEmpty)
-        const Padding(
-          padding: EdgeInsets.symmetric(vertical: 40),
-          child: Center(child: CircularProgressIndicator()),
-        )
-      else if (_clients.isEmpty)
-        buildEmptyState(
-          icon: Icons.people_outline_rounded,
-          title: 'No clients yet',
-          subtitle: _loadError == null
-              ? 'Register your first client to get started.'
-              : 'Could not load clients. Tap Refresh to try again.',
-        )
-      else
-        ..._clients.map((client) => _buildClientCard(client)),
-      if (_loadError != null) ...[
-        const SizedBox(height: 12),
-        Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: AppColors.amber.withOpacity(0.08),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: AppColors.amber.withOpacity(0.3)),
-          ),
-          child: Text(
-            '⚠ $_loadError',
-            style: GoogleFonts.outfit(fontSize: 10.5, color: AppColors.amber),
-          ),
-        ),
-      ],
-    ]);
+    );
   }
 
   Widget _buildClientCard(ClientModel client) {
@@ -1562,6 +1491,8 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
           ],
         ),
         child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             InkWell(
               onTap: () => _openClientDashboard(client),
@@ -1570,14 +1501,20 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
                 bottom: Radius.circular(isExpanded ? 0 : 16),
               ),
               child: Padding(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(14),
                 child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    _buildClientLogo(client, size: 52),
-                    const SizedBox(width: 14),
+                    SizedBox(
+                      width: 52,
+                      height: 52,
+                      child: _buildClientLogo(client, size: 52),
+                    ),
+                    const SizedBox(width: 12),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
                         children: [
                           Text(
                             client.companyName.isNotEmpty
@@ -1599,34 +1536,38 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
                                 ? client.mobile
                                 : 'No contact provided'),
                             style: GoogleFonts.outfit(
-                                fontSize: 12,
-                                color: AppColors.textDarkMuted),
+                              fontSize: 12,
+                              color: AppColors.textDarkMuted,
+                            ),
                             overflow: TextOverflow.ellipsis,
                             maxLines: 1,
                           ),
-                          const SizedBox(height: 6),
-                          Row(
-                            children: [
-                              if (client.address.isNotEmpty) ...[
+                          if (client.address.isNotEmpty) ...[
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
                                 Icon(Icons.location_on_outlined,
-                                    size: 12, color: AppColors.textDarkMuted),
+                                    size: 12,
+                                    color: AppColors.textDarkMuted),
                                 const SizedBox(width: 4),
-                                Flexible(
+                                Expanded(
                                   child: Text(
                                     client.address,
                                     style: GoogleFonts.outfit(
-                                        fontSize: 11,
-                                        color: AppColors.textDarkMuted),
+                                      fontSize: 11,
+                                      color: AppColors.textDarkMuted,
+                                    ),
                                     overflow: TextOverflow.ellipsis,
                                     maxLines: 1,
                                   ),
                                 ),
                               ],
-                            ],
-                          ),
+                            ),
+                          ],
                         ],
                       ),
                     ),
+                    const SizedBox(width: 8),
                     Container(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 8, vertical: 4),
@@ -1657,13 +1598,8 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
                 ),
               ),
             ),
-            // Bottom Chevron Toggle
             InkWell(
-              onTap: () {
-                setState(() {
-                  _expandedClients[key] = !isExpanded;
-                });
-              },
+              onTap: () => setState(() => _expandedClients[key] = !isExpanded),
               child: Container(
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(vertical: 8),
@@ -1688,47 +1624,36 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
                       ),
                     ),
                     const SizedBox(width: 4),
-                    AnimatedRotation(
-                      turns: isExpanded ? 0.5 : 0,
-                      duration: const Duration(milliseconds: 220),
-                      child: Icon(
-                        Icons.keyboard_arrow_down_rounded,
-                        size: 18,
-                        color: client.logoColor,
-                      ),
+                    Icon(
+                      isExpanded
+                          ? Icons.keyboard_arrow_up_rounded
+                          : Icons.keyboard_arrow_down_rounded,
+                      size: 18,
+                      color: client.logoColor,
                     ),
                   ],
                 ),
               ),
             ),
-            // Expanded details using safe CrossFade
-            AnimatedCrossFade(
-              firstChild: const SizedBox(width: double.infinity),
-              secondChild: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            if (isExpanded)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     const Divider(height: 1, color: AppColors.borderLight),
                     const SizedBox(height: 12),
-                    _buildDetailRow(
-                        Icons.phone_rounded,
-                        'Mobile',
+                    _buildDetailRow(Icons.phone_rounded, 'Mobile',
                         client.mobile.isNotEmpty ? client.mobile : 'N/A'),
                     const SizedBox(height: 8),
-                    _buildDetailRow(
-                        Icons.location_on_rounded,
-                        'Address',
+                    _buildDetailRow(Icons.location_on_rounded, 'Address',
                         client.address.isNotEmpty ? client.address : 'N/A'),
                     const SizedBox(height: 8),
-                    _buildDetailRow(
-                        Icons.language_rounded,
-                        'Website',
+                    _buildDetailRow(Icons.language_rounded, 'Website',
                         client.website.isNotEmpty ? client.website : 'N/A'),
                     const SizedBox(height: 8),
-                    _buildDetailRow(
-                        Icons.mail_outline_rounded,
-                        'Email',
+                    _buildDetailRow(Icons.mail_outline_rounded, 'Email',
                         client.email.isNotEmpty ? client.email : 'N/A'),
                     const SizedBox(height: 14),
                     Row(
@@ -1741,6 +1666,7 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
                               fontWeight: FontWeight.w700,
                               color: AppColors.textDarkSoft,
                             ),
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                         TextButton.icon(
@@ -1778,7 +1704,7 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
                           border: Border.all(color: AppColors.borderLight),
                         ),
                         child: Text(
-                          'No handles added yet. Tap "Add Handles" to link this client\'s social accounts.',
+                          'No handles added yet.',
                           style: GoogleFonts.outfit(
                             fontSize: 11.5,
                             color: AppColors.textDarkMuted,
@@ -1814,12 +1740,6 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
                   ],
                 ),
               ),
-              crossFadeState: isExpanded
-                  ? CrossFadeState.showSecond
-                  : CrossFadeState.showFirst,
-              duration: const Duration(milliseconds: 220),
-              sizeCurve: Curves.easeOutCubic,
-            ),
           ],
         ),
       ),
@@ -1827,7 +1747,6 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
   }
 
   Widget _buildClientLogo(ClientModel client, {double size = 52}) {
-    // 1) Prefer network URL (uploads/ file stored on server)
     if (client.logoUrl != null && client.logoUrl!.trim().isNotEmpty) {
       return Container(
         width: size,
@@ -1862,7 +1781,6 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
       );
     }
 
-    // 2) Fallback: raw bytes (during pick, before upload finishes)
     if (client.logoBytes != null && client.logoBytes!.isNotEmpty) {
       return Container(
         width: size,
@@ -1883,7 +1801,6 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
       );
     }
 
-    // 3) Initial fallback
     return _initialLogo(client, size);
   }
 
@@ -1964,12 +1881,6 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
         },
       ),
     );
-
-    if (mounted) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) setState(() {});
-      });
-    }
   }
 
   // ── OPEN CLIENT DASHBOARD ────────────────────────────────────────────────
@@ -2167,8 +2078,7 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(14),
-          border:
-          Border.all(color: e.platform.color.withOpacity(0.3)),
+          border: Border.all(color: e.platform.color.withOpacity(0.3)),
         ),
         child: Row(
           children: [
@@ -2178,8 +2088,8 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(11),
                 color: e.platform.color.withOpacity(0.15),
-                border: Border.all(
-                    color: e.platform.color.withOpacity(0.4)),
+                border:
+                Border.all(color: e.platform.color.withOpacity(0.4)),
               ),
               child: Icon(e.platform.icon,
                   color: e.platform.color, size: 20),
@@ -2285,7 +2195,7 @@ class _AddHandlesSheetState extends State<_AddHandlesSheet> {
       companyName: widget.client.companyName,
       logoColor: widget.client.logoColor,
       logoBytes: widget.client.logoBytes,
-      logoUrl: widget.client.logoUrl, // preserved
+      logoUrl: widget.client.logoUrl,
       address: widget.client.address,
       website: widget.client.website,
       mobile: widget.client.mobile,
@@ -2387,8 +2297,7 @@ class _AddHandlesSheetState extends State<_AddHandlesSheet> {
                                 border: Border.all(
                                     color: p.color.withOpacity(0.35)),
                               ),
-                              child:
-                              Icon(p.icon, color: p.color, size: 20),
+                              child: Icon(p.icon, color: p.color, size: 20),
                             ),
                             const SizedBox(width: 10),
                             Expanded(

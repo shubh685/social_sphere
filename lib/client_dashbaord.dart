@@ -1,4 +1,4 @@
-// client_dashboard.dart
+// client_dashbaord.dart  (FULL FIXED VERSION — no animations, all rendering errors resolved)
 import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
@@ -34,8 +34,7 @@ class ClientDashboard extends StatefulWidget {
   State<ClientDashboard> createState() => _ClientDashboardState();
 }
 
-class _ClientDashboardState extends State<ClientDashboard>
-    with TickerProviderStateMixin {
+class _ClientDashboardState extends State<ClientDashboard> {
   int _tabIndex = 0;
 
   late final List<_ClientTab> _tabs = [
@@ -49,8 +48,6 @@ class _ClientDashboardState extends State<ClientDashboard>
     _ClientTab('Analytics', Icons.analytics_rounded, AppColors.pink),
   ];
   late ClientModel _client;
-  late AnimationController _bgAnimationController;
-  late Animation<double> _bgAnimation;
 
   final List<ScheduledPost> _localScheduled = [];
 
@@ -58,7 +55,7 @@ class _ClientDashboardState extends State<ClientDashboard>
   final Map<String, LiveEngagement> _liveEngagement = {};
   Timer? _liveUpdateTimer;
 
-  /// Tracks which posts are expanded in calendar view
+  /// Tracks which posts are expanded in queue/calendar view
   final Set<String> _expandedPosts = {};
 
   DateRangeSelection _analyticsRange = DateRangeSelection(
@@ -83,14 +80,6 @@ class _ClientDashboardState extends State<ClientDashboard>
     super.initState();
     _client = widget.client;
     _localScheduled.addAll(widget.scheduledPosts);
-    _bgAnimationController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 8),
-    )..repeat(reverse: true);
-    _bgAnimation = Tween<double>(begin: 0, end: 1).animate(
-      CurvedAnimation(parent: _bgAnimationController, curve: Curves.easeInOut),
-    );
-
     _initializeLiveEngagement();
     _startLiveUpdates();
   }
@@ -146,7 +135,6 @@ class _ClientDashboardState extends State<ClientDashboard>
   @override
   void dispose() {
     _liveUpdateTimer?.cancel();
-    _bgAnimationController.dispose();
     super.dispose();
   }
 
@@ -155,23 +143,18 @@ class _ClientDashboardState extends State<ClientDashboard>
     final size = MediaQuery.of(context).size;
     final isMobile = size.width < 720;
 
-    return AnimatedBuilder(
-      animation: _bgAnimation,
-      builder: (context, _) {
-        return Scaffold(
-          backgroundColor: AppColors.scaffoldLight,
-          body: SafeArea(
-            child: Column(
-              children: [
-                _buildClientTopBar(isMobile),
-                _buildTabsRow(isMobile),
-                const Divider(height: 1, color: AppColors.borderLight),
-                Expanded(child: _buildTabContent()),
-              ],
-            ),
-          ),
-        );
-      },
+    return Scaffold(
+      backgroundColor: AppColors.scaffoldLight,
+      body: SafeArea(
+        child: Column(
+          children: [
+            _buildClientTopBar(isMobile),
+            _buildTabsRow(isMobile),
+            const Divider(height: 1, color: AppColors.borderLight),
+            Expanded(child: _buildTabContent()),
+          ],
+        ),
+      ),
     );
   }
 
@@ -317,29 +300,18 @@ class _ClientDashboardState extends State<ClientDashboard>
             child: InkWell(
               onTap: () => setState(() => _tabIndex = i),
               borderRadius: BorderRadius.circular(10),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 180),
+              child: Container(
                 padding:
                 const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(10),
-                  color:
-                  isSelected ? t.color.withOpacity(0.14) : Colors.white,
+                  color: isSelected ? t.color.withOpacity(0.14) : Colors.white,
                   border: Border.all(
                     color: isSelected
                         ? t.color.withOpacity(0.55)
                         : AppColors.borderLight,
                     width: isSelected ? 1.4 : 1,
                   ),
-                  boxShadow: isSelected
-                      ? [
-                    BoxShadow(
-                      color: t.color.withOpacity(0.15),
-                      blurRadius: 10,
-                      offset: const Offset(0, 3),
-                    ),
-                  ]
-                      : null,
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -347,19 +319,16 @@ class _ClientDashboardState extends State<ClientDashboard>
                     Icon(
                       t.icon,
                       size: 14,
-                      color:
-                      isSelected ? t.color : AppColors.textDarkMuted,
+                      color: isSelected ? t.color : AppColors.textDarkMuted,
                     ),
                     const SizedBox(width: 6),
                     Text(
                       t.label,
                       style: GoogleFonts.outfit(
                         fontSize: 12,
-                        fontWeight: isSelected
-                            ? FontWeight.w700
-                            : FontWeight.w500,
-                        color:
-                        isSelected ? t.color : AppColors.textDarkSoft,
+                        fontWeight:
+                        isSelected ? FontWeight.w700 : FontWeight.w500,
+                        color: isSelected ? t.color : AppColors.textDarkSoft,
                       ),
                     ),
                   ],
@@ -430,7 +399,7 @@ class _ClientDashboardState extends State<ClientDashboard>
   }
 
   // ═════════════════════════════════════════════════════════════════════════
-  // EXPANDABLE POST CARD (used in Queue, Calendar, Overview)
+  // EXPANDABLE POST CARD — static (no animation)
   // ═════════════════════════════════════════════════════════════════════════
   Widget _buildLivePostCard(ScheduledPost post) {
     final id = _postId(post);
@@ -504,7 +473,7 @@ class _ClientDashboardState extends State<ClientDashboard>
                 ),
                 _buildStatusPill(statusLabel, statusColor),
                 const SizedBox(width: 6),
-                // ── Expand / Collapse chevron
+                // ── Expand / Collapse chevron (static icon)
                 Material(
                   color: Colors.transparent,
                   child: InkWell(
@@ -530,16 +499,14 @@ class _ClientDashboardState extends State<ClientDashboard>
                               : AppColors.borderLight,
                         ),
                       ),
-                      child: AnimatedRotation(
-                        duration: const Duration(milliseconds: 200),
-                        turns: isExpanded ? 0.5 : 0,
-                        child: Icon(
-                          Icons.keyboard_arrow_down_rounded,
-                          size: 18,
-                          color: isExpanded
-                              ? post.color
-                              : AppColors.textDarkMuted,
-                        ),
+                      child: Icon(
+                        isExpanded
+                            ? Icons.keyboard_arrow_up_rounded
+                            : Icons.keyboard_arrow_down_rounded,
+                        size: 18,
+                        color: isExpanded
+                            ? post.color
+                            : AppColors.textDarkMuted,
                       ),
                     ),
                   ),
@@ -548,110 +515,101 @@ class _ClientDashboardState extends State<ClientDashboard>
             ),
           ),
 
-          // ── Expandable body
-          AnimatedCrossFade(
-            firstChild: const SizedBox(width: double.infinity),
-            secondChild: RepaintBoundary(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (post.caption.isNotEmpty)
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: AppColors.scaffoldLight,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Text(
-                          post.caption,
-                          style: GoogleFonts.outfit(
-                            fontSize: 11.5,
-                            color: AppColors.textDarkSoft,
-                            height: 1.4,
-                          ),
+          // ── Expandable body (simple if condition, no animation)
+          if (isExpanded)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (post.caption.isNotEmpty)
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: AppColors.scaffoldLight,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        post.caption,
+                        style: GoogleFonts.outfit(
+                          fontSize: 11.5,
+                          color: AppColors.textDarkSoft,
+                          height: 1.4,
                         ),
                       ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        const Icon(Icons.schedule_rounded,
-                            size: 13, color: AppColors.textDarkMuted),
-                        const SizedBox(width: 4),
-                        Text(
-                          DateFormat('dd MMM • HH:mm').format(post.scheduledAt),
-                          style: GoogleFonts.outfit(
-                              fontSize: 11, color: AppColors.textDarkMuted),
-                        ),
-                        const Spacer(),
-                        const Icon(Icons.person_outline_rounded,
-                            size: 13, color: AppColors.textDarkMuted),
-                        const SizedBox(width: 4),
-                        Text(
-                          post.ownerName,
-                          style: GoogleFonts.outfit(
-                              fontSize: 11, color: AppColors.textDarkMuted),
-                        ),
-                      ],
                     ),
-                    const SizedBox(height: 12),
-                    const Divider(height: 1, color: AppColors.borderLight),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _LiveCounter(
-                            icon: Icons.favorite_rounded,
-                            label: 'Likes',
-                            value: live.likes,
-                            color: AppColors.pink,
-                          ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      const Icon(Icons.schedule_rounded,
+                          size: 13, color: AppColors.textDarkMuted),
+                      const SizedBox(width: 4),
+                      Text(
+                        DateFormat('dd MMM • HH:mm').format(post.scheduledAt),
+                        style: GoogleFonts.outfit(
+                            fontSize: 11, color: AppColors.textDarkMuted),
+                      ),
+                      const Spacer(),
+                      const Icon(Icons.person_outline_rounded,
+                          size: 13, color: AppColors.textDarkMuted),
+                      const SizedBox(width: 4),
+                      Text(
+                        post.ownerName,
+                        style: GoogleFonts.outfit(
+                            fontSize: 11, color: AppColors.textDarkMuted),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  const Divider(height: 1, color: AppColors.borderLight),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _LiveCounter(
+                          icon: Icons.favorite_rounded,
+                          label: 'Likes',
+                          value: live.likes,
+                          color: AppColors.pink,
                         ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: _LiveCounter(
-                            icon: Icons.chat_bubble_rounded,
-                            label: 'Comments',
-                            value: live.comments,
-                            color: AppColors.cyan,
-                          ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _LiveCounter(
+                          icon: Icons.chat_bubble_rounded,
+                          label: 'Comments',
+                          value: live.comments,
+                          color: AppColors.cyan,
                         ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: _LiveCounter(
-                            icon: Icons.share_rounded,
-                            label: 'Shares',
-                            value: live.shares,
-                            color: AppColors.green,
-                          ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _LiveCounter(
+                          icon: Icons.share_rounded,
+                          label: 'Shares',
+                          value: live.shares,
+                          color: AppColors.green,
                         ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        const Icon(Icons.sync_rounded,
-                            size: 11, color: AppColors.textDarkMuted),
-                        const SizedBox(width: 4),
-                        Text(
-                          'Updated ${_timeAgo(live.lastUpdated)}',
-                          style: GoogleFonts.outfit(
-                              fontSize: 9.5, color: AppColors.textDarkMuted),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      const Icon(Icons.sync_rounded,
+                          size: 11, color: AppColors.textDarkMuted),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Updated ${_timeAgo(live.lastUpdated)}',
+                        style: GoogleFonts.outfit(
+                            fontSize: 9.5, color: AppColors.textDarkMuted),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
-            crossFadeState: isExpanded
-                ? CrossFadeState.showSecond
-                : CrossFadeState.showFirst,
-            duration: const Duration(milliseconds: 220),
-            sizeCurve: Curves.easeOutCubic,
-          ),
         ],
       ),
     );
@@ -683,8 +641,7 @@ class _ClientDashboardState extends State<ClientDashboard>
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(50),
                   color: AppColors.green.withOpacity(0.12),
-                  border:
-                  Border.all(color: AppColors.green.withOpacity(0.4)),
+                  border: Border.all(color: AppColors.green.withOpacity(0.4)),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -1645,8 +1602,7 @@ class _ClientDashboardState extends State<ClientDashboard>
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(50),
                       color: AppColors.red.withOpacity(0.10),
-                      border:
-                      Border.all(color: AppColors.red.withOpacity(0.4)),
+                      border: Border.all(color: AppColors.red.withOpacity(0.4)),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -1685,17 +1641,15 @@ class _ClientDashboardState extends State<ClientDashboard>
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(50),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 160),
+        child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(50),
             color:
             selected ? color.withOpacity(0.16) : AppColors.scaffoldLight,
             border: Border.all(
-              color: selected
-                  ? color.withOpacity(0.65)
-                  : AppColors.borderLight,
+              color:
+              selected ? color.withOpacity(0.65) : AppColors.borderLight,
               width: selected ? 1.4 : 1,
             ),
           ),
@@ -2021,8 +1975,7 @@ class _ClientDashboardState extends State<ClientDashboard>
 
                 return GestureDetector(
                   onTap: () => setState(() => _selectedDate = date),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 160),
+                  child: Container(
                     padding: const EdgeInsets.all(4),
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(8),
@@ -2078,8 +2031,7 @@ class _ClientDashboardState extends State<ClientDashboard>
                         const SizedBox(height: 2),
                         Expanded(
                           child: Column(
-                            crossAxisAlignment:
-                            CrossAxisAlignment.stretch,
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: posts
                                 .take(2)
                                 .map((p) => _miniCalendarChip(p))
@@ -2192,7 +2144,7 @@ class _ClientDashboardState extends State<ClientDashboard>
   }
 
   // ═════════════════════════════════════════════════════════════════════════
-  // ANALYTICS WITH PDF EXPORT (FIXED)
+  // ANALYTICS WITH PDF EXPORT
   // ═════════════════════════════════════════════════════════════════════════
   Widget _buildAnalyticsWithExport() {
     return Column(
@@ -2235,8 +2187,8 @@ class _ClientDashboardState extends State<ClientDashboard>
                 ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.pink,
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 14, vertical: 10),
+                  padding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10),
                   ),
@@ -2260,7 +2212,7 @@ class _ClientDashboardState extends State<ClientDashboard>
   }
 
   // ═════════════════════════════════════════════════════════════════════════
-  // PDF EXPORT (FIXED)
+  // PDF EXPORT
   // ═════════════════════════════════════════════════════════════════════════
   Future<void> _exportAnalyticsPdf() async {
     if (_isExporting) return;
@@ -2633,8 +2585,7 @@ class _ClientDashboardState extends State<ClientDashboard>
       padding: const pw.EdgeInsets.only(bottom: 4),
       decoration: const pw.BoxDecoration(
         border: pw.Border(
-          bottom: pw.BorderSide(
-              color: PdfColor.fromInt(0xFF311042), width: 2),
+          bottom: pw.BorderSide(color: PdfColor.fromInt(0xFF311042), width: 2),
         ),
       ),
       child: pw.Text(
@@ -2770,8 +2721,7 @@ class _ClientDashboardState extends State<ClientDashboard>
     }
   }
 
-  Widget _presetRange(
-      BuildContext ctx, String label, int days, DateTime now) {
+  Widget _presetRange(BuildContext ctx, String label, int days, DateTime now) {
     return ListTile(
       contentPadding: EdgeInsets.zero,
       leading: Container(
@@ -2808,7 +2758,7 @@ class _ClientDashboardState extends State<ClientDashboard>
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// SOCIAL HANDLES FORM (FIXED / ADDED)
+// SOCIAL HANDLES FORM
 // ═════════════════════════════════════════════════════════════════════════════
 class SocialHandlesForm extends StatefulWidget {
   final ClientModel client;
@@ -2928,10 +2878,13 @@ class _SocialHandlesFormState extends State<SocialHandlesForm> {
                   const SizedBox(height: 8),
                   TextField(
                     controller: controller,
-                    style: GoogleFonts.outfit(color: AppColors.textDark, fontSize: 13),
+                    style: GoogleFonts.outfit(
+                        color: AppColors.textDark, fontSize: 13),
                     decoration: InputDecoration(
-                      hintText: '${platform.handlePrefix}username or profile URL',
-                      hintStyle: GoogleFonts.outfit(color: AppColors.textDarkMuted, fontSize: 12),
+                      hintText:
+                      '${platform.handlePrefix}username or profile URL',
+                      hintStyle: GoogleFonts.outfit(
+                          color: AppColors.textDarkMuted, fontSize: 12),
                       filled: true,
                       fillColor: Colors.white,
                       border: OutlineInputBorder(
@@ -2944,9 +2897,11 @@ class _SocialHandlesFormState extends State<SocialHandlesForm> {
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(10),
-                        borderSide: BorderSide(color: platform.color, width: 1.4),
+                        borderSide:
+                        BorderSide(color: platform.color, width: 1.4),
                       ),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 10),
                     ),
                   ),
                 ],
@@ -3024,7 +2979,7 @@ class _SocialHandlesFormState extends State<SocialHandlesForm> {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// LIVE COUNTER WIDGETS
+// LIVE COUNTER WIDGETS — static (no animation)
 // ═════════════════════════════════════════════════════════════════════════════
 class _LiveCounter extends StatelessWidget {
   final IconData icon;
@@ -3066,8 +3021,8 @@ class _LiveCounter extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 2),
-          _AnimatedCounter(
-            value: value,
+          Text(
+            _formatValue(value),
             style: GoogleFonts.bricolageGrotesque(
               fontSize: 18,
               fontWeight: FontWeight.w800,
@@ -3076,25 +3031,6 @@ class _LiveCounter extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-class _AnimatedCounter extends StatelessWidget {
-  final int value;
-  final TextStyle style;
-
-  const _AnimatedCounter({required this.value, required this.style});
-
-  @override
-  Widget build(BuildContext context) {
-    return TweenAnimationBuilder<double>(
-      tween: Tween(begin: 0, end: value.toDouble()),
-      duration: const Duration(milliseconds: 700),
-      curve: Curves.easeOutCubic,
-      builder: (context, v, _) {
-        return Text(_formatValue(v.round()), style: style);
-      },
     );
   }
 
@@ -3461,8 +3397,7 @@ class _ClientCreateContentFormState extends State<ClientCreateContentForm> {
                             _contentType = p.allowedContentTypes.first;
                           }
                         }),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
+                        child: Container(
                           padding: const EdgeInsets.symmetric(
                               horizontal: 12, vertical: 8),
                           decoration: BoxDecoration(
@@ -3526,16 +3461,14 @@ class _ClientCreateContentFormState extends State<ClientCreateContentForm> {
                         _mediaList.clear();
                         _youTubeThumbnailIndex = null;
                       }),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
+                      child: Container(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 16, vertical: 10),
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(10),
                           gradient:
                           isSelected ? AppColors.primaryGradient : null,
-                          color:
-                          isSelected ? null : AppColors.scaffoldLight,
+                          color: isSelected ? null : AppColors.scaffoldLight,
                           border: Border.all(
                             color: isSelected
                                 ? AppColors.cyan
@@ -3686,8 +3619,7 @@ class _ClientCreateContentFormState extends State<ClientCreateContentForm> {
                     final isSelected = _status == s;
                     return GestureDetector(
                       onTap: () => setState(() => _status = s),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 180),
+                      child: Container(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 12, vertical: 8),
                         decoration: BoxDecoration(
@@ -3696,9 +3628,8 @@ class _ClientCreateContentFormState extends State<ClientCreateContentForm> {
                               ? color.withOpacity(0.15)
                               : AppColors.scaffoldLight,
                           border: Border.all(
-                            color: isSelected
-                                ? color
-                                : AppColors.borderLight,
+                            color:
+                            isSelected ? color : AppColors.borderLight,
                             width: isSelected ? 1.5 : 1,
                           ),
                         ),
@@ -3898,8 +3829,8 @@ class _ClientCreateContentFormState extends State<ClientCreateContentForm> {
                           size: 42, color: AppColors.cyan),
                       const SizedBox(height: 6),
                       Padding(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 6),
+                        padding:
+                        const EdgeInsets.symmetric(horizontal: 6),
                         child: Text(
                           m.fileName,
                           textAlign: TextAlign.center,
