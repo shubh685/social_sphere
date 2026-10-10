@@ -136,6 +136,12 @@ class ClientModel {
   final String companyName;
   final Color logoColor;
   final Uint8List? logoBytes;
+
+  /// Server URL for the logo (returned by `register_company.php`).
+  /// Takes precedence over [logoBytes] when both are present — this is
+  /// how a logo uploaded to the server is displayed on the client card.
+  final String? logoUrl;
+
   final String address;
   final String website;
   final String mobile;
@@ -146,7 +152,8 @@ class ClientModel {
   ClientModel({
     required this.companyName,
     required this.logoColor,
-    required this.logoBytes,
+    this.logoBytes,          // now optional
+    this.logoUrl,            // ← NEW: server URL (uploads/...)
     required this.address,
     required this.website,
     required this.mobile,
@@ -154,6 +161,33 @@ class ClientModel {
     required this.socialHandles,
     this.metaConnected = const {},
   });
+
+  /// Handy copy helper so callers don't need to rebuild every field.
+  ClientModel copyWith({
+    String? companyName,
+    Color? logoColor,
+    Uint8List? logoBytes,
+    String? logoUrl,
+    String? address,
+    String? website,
+    String? mobile,
+    String? email,
+    Map<String, String>? socialHandles,
+    Map<String, bool>? metaConnected,
+  }) {
+    return ClientModel(
+      companyName: companyName ?? this.companyName,
+      logoColor: logoColor ?? this.logoColor,
+      logoBytes: logoBytes ?? this.logoBytes,
+      logoUrl: logoUrl ?? this.logoUrl,
+      address: address ?? this.address,
+      website: website ?? this.website,
+      mobile: mobile ?? this.mobile,
+      email: email ?? this.email,
+      socialHandles: socialHandles ?? this.socialHandles,
+      metaConnected: metaConnected ?? this.metaConnected,
+    );
+  }
 }
 
 // Add inside dashboard_shared.dart

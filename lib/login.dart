@@ -1,3 +1,6 @@
+// login.dart
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:socialee_sphere/dashboard.dart';
@@ -90,19 +93,31 @@ class _LogINState extends State<LogIN> with TickerProviderStateMixin {
     }
 
     setState(() => _isLoading = true);
-    final res = await ApiService.login(email: email, password: password);
-    setState(() => _isLoading = false);
 
-    if (res['status'] == true) {
-      _showSnackBar("Login successful!", isError: false);
-      if (mounted) {
+    try {
+      // Assuming ApiService.login returns a Map<String, dynamic> decoded JSON response
+      final res = await ApiService.login(email: email, password: password);
+
+      setState(() => _isLoading = false);
+
+      if (res['status'] == true) {
+        final agencyData = res['data'];
+
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (context) => const Dashboard()),
+          MaterialPageRoute(
+            builder: (context) => Dashboard(
+              agencyName: agencyData['agency_name'] ?? 'Grow Socialee',
+              agencyEmail: agencyData['email'] ?? email,
+            ),
+          ),
         );
+      } else {
+        _showSnackBar(res['message'] ?? 'Login failed. Please try again.');
       }
-    } else {
-      _showSnackBar(res['message'] ?? 'Login failed. Please try again.');
+    } catch (e) {
+      setState(() => _isLoading = false);
+      _showSnackBar('An error occurred: $e');
     }
   }
 

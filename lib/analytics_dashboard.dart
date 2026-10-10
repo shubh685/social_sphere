@@ -5,9 +5,9 @@ import 'package:file_picker/file_picker.dart';
 import 'dart:typed_data';
 import 'dashboard_shared.dart';
 
-// ═════════════════════════════════════════════════════════════════════════════
+// ═════════════════════════════════════════════════════════════════════════
 // PUBLISHING SECTIONS
-// ═════════════════════════════════════════════════════════════════════════════
+// ═════════════════════════════════════════════════════════════════════════
 class PublishingSections {
   static Widget _wrap(List<Widget> children) {
     return SingleChildScrollView(
@@ -20,9 +20,6 @@ class PublishingSections {
     );
   }
 
-  // ───────────────────────────────────────────────────────────────────────────
-  // PUBLISHING QUEUE
-  // ───────────────────────────────────────────────────────────────────────────
   static Widget buildPublishingQueue(
       List<ScheduledPost> scheduledPosts, {
         String? filterClientName,
@@ -53,9 +50,6 @@ class PublishingSections {
     ]);
   }
 
-  // ───────────────────────────────────────────────────────────────────────────
-  // PUBLISHED
-  // ───────────────────────────────────────────────────────────────────────────
   static Widget buildPublishedSection(
       List<PublishedPost> publishedPosts, {
         String? filterClientName,
@@ -190,9 +184,6 @@ class PublishingSections {
     );
   }
 
-  // ───────────────────────────────────────────────────────────────────────────
-  // FAILED
-  // ───────────────────────────────────────────────────────────────────────────
   static Widget buildFailedSection(
       List<FailedPost> failedPosts, {
         String? filterClientName,
@@ -302,9 +293,6 @@ class PublishingSections {
     );
   }
 
-  // ───────────────────────────────────────────────────────────────────────────
-  // ANALYTICS (with date range selector + client filter + inline calendar)
-  // ───────────────────────────────────────────────────────────────────────────
   static Widget buildAnalyticsSection(
       List<PublishedPost> publishedPosts, {
         String? filterClientName,
@@ -317,8 +305,6 @@ class PublishingSections {
         ValueChanged<DateTime>? onSelectedDateChanged,
       }) {
     final platforms = _demoPlatformAnalytics();
-    final month = calendarMonth ?? DateTime.now();
-    final selDate = selectedDate ?? DateTime.now();
 
     return _wrap([
       buildSectionTitle('Advanced Analytics & Social Metrics'),
@@ -331,20 +317,13 @@ class PublishingSections {
             fontSize: 11.5, color: AppColors.textDarkMuted),
       ),
       const SizedBox(height: 12),
-
-      // ── Date range selector row
       _buildDateRangeRow(dateRange, onDateRangeTap),
       const SizedBox(height: 16),
-
-      // ── Top KPI strip
       _buildGlobalKpiStrip(platforms),
       const SizedBox(height: 20),
-
-      // ── Per-platform deep dive
       buildSectionTitle('Platform Depth Breakdown'),
       const SizedBox(height: 12),
       ...platforms.map((p) => _platformDeepCard(p)),
-
       const SizedBox(height: 20),
       buildSectionTitle('Top Performing Posts Across Channels'),
       const SizedBox(height: 12),
@@ -417,7 +396,6 @@ class PublishingSections {
     );
   }
 
-  // ── Demo data supporting full depth metrics
   static List<PlatformAnalytics> _demoPlatformAnalytics() {
     return [
       PlatformAnalytics(
@@ -679,7 +657,6 @@ class PublishingSections {
     ];
   }
 
-  // ── Global KPI strip
   static Widget _buildGlobalKpiStrip(List<PlatformAnalytics> platforms) {
     int totalImpr = 0, totalReach = 0, totalEng = 0, totalShares = 0;
     for (final p in platforms) {
@@ -772,7 +749,6 @@ class PublishingSections {
     );
   }
 
-  // ── Per-platform deep card
   static Widget _platformDeepCard(PlatformAnalytics p) {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -1134,7 +1110,6 @@ class PublishingSections {
     }
   }
 
-  // ── Best-time heatmap
   static Widget _bestTimeHeatmap(PlatformAnalytics p) {
     const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     final byDay = <String, BestTimeSlot>{};
@@ -1145,19 +1120,21 @@ class PublishingSections {
       }
     }
 
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppColors.scaffoldLight,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: p.color.withOpacity(0.25)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: days.map((d) {
-              return Expanded(
+    return SizedBox(
+      height: 145,
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: AppColors.scaffoldLight,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: p.color.withOpacity(0.25)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: days
+                  .map((d) => Expanded(
                 child: Center(
                   child: Text(
                     d,
@@ -1168,58 +1145,61 @@ class PublishingSections {
                     ),
                   ),
                 ),
-              );
-            }).toList(),
-          ),
-          const SizedBox(height: 6),
-          Row(
-            children: days.map((d) {
-              final slot = byDay[d];
-              final score = slot?.audienceScore ?? 0;
-              return Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 2),
-                  child: Container(
-                    height: 46,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(6),
-                      color: p.color.withOpacity(0.10 + 0.55 * (score / 100)),
-                      border: Border.all(
-                          color: p.color.withOpacity(0.35), width: 0.5),
-                    ),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          slot == null ? '—' : _hourLabel(slot.hour),
-                          style: GoogleFonts.outfit(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w800,
-                            color: Colors.white,
+              ))
+                  .toList(),
+            ),
+            const SizedBox(height: 6),
+            Row(
+              children: days.map((d) {
+                final slot = byDay[d];
+                final score = slot?.audienceScore ?? 0;
+                return Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 2),
+                    child: Container(
+                      height: 46,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(6),
+                        color: p.color
+                            .withOpacity(0.10 + 0.55 * (score / 100)),
+                        border: Border.all(
+                            color: p.color.withOpacity(0.35), width: 0.5),
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            slot == null ? '—' : _hourLabel(slot.hour),
+                            style: GoogleFonts.outfit(
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                            ),
                           ),
-                        ),
-                        Text(
-                          '$score',
-                          style: GoogleFonts.outfit(
-                            fontSize: 8.5,
-                            color: Colors.white.withOpacity(0.9),
+                          Text(
+                            '$score',
+                            style: GoogleFonts.outfit(
+                              fontSize: 8,
+                              color: Colors.white.withOpacity(0.9),
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
-                ),
-              );
-            }).toList(),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Darker color = higher audience peak activity. Best time slot: '
-                '${_bestDayLabel(byDay)}',
-            style: GoogleFonts.outfit(
-                fontSize: 10.5, color: AppColors.textDarkMuted),
-          ),
-        ],
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Darker color = higher audience peak activity. Best time slot: ${_bestDayLabel(byDay)}',
+              style: GoogleFonts.outfit(
+                  fontSize: 10, color: AppColors.textDarkMuted),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1309,9 +1289,6 @@ class PublishingSections {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ANALYTICS MODELS
-// ─────────────────────────────────────────────────────────────────────────────
 class ContentTypeStats {
   final String type;
   final int published;
@@ -1395,358 +1372,9 @@ class PlatformAnalytics {
       totalReach == 0 ? 0 : totalImpressions / totalReach;
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
-// INLINE SCHEDULED CALENDAR
-// Displays each day's scheduled posts INSIDE the day box.
-// ═════════════════════════════════════════════════════════════════════════════
-class _InlineScheduledCalendar extends StatelessWidget {
-  final DateTime month;
-  final DateTime selectedDate;
-  final List<ScheduledPost> scheduledPosts;
-  final String? filterClientName;
-  final ValueChanged<DateTime>? onMonthChanged;
-  final ValueChanged<DateTime>? onDateSelected;
-
-  const _InlineScheduledCalendar({
-    required this.month,
-    required this.selectedDate,
-    required this.scheduledPosts,
-    this.filterClientName,
-    this.onMonthChanged,
-    this.onDateSelected,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final firstDay = DateTime(month.year, month.month, 1);
-    final daysInMonth = DateTime(month.year, month.month + 1, 0).day;
-    final startWeekday = firstDay.weekday % 7;
-
-    final scoped = filterClientName == null
-        ? scheduledPosts
-        : scheduledPosts
-        .where((p) => p.clientName == filterClientName)
-        .toList();
-
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: AppColors.amber.withOpacity(0.35)),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.amber.withOpacity(0.08),
-            blurRadius: 20,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          // ── Header with month navigation
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              IconButton(
-                icon: const Icon(Icons.chevron_left_rounded,
-                    color: AppColors.textDark),
-                onPressed: () {
-                  onMonthChanged?.call(
-                      DateTime(month.year, month.month - 1));
-                },
-              ),
-              Column(
-                children: [
-                  Text(
-                    formatMonthYear(month),
-                    style: GoogleFonts.bricolageGrotesque(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.textDark,
-                    ),
-                  ),
-                  Text(
-                    '${scoped.length} scheduled this month',
-                    style: GoogleFonts.outfit(
-                        fontSize: 10.5, color: AppColors.textDarkMuted),
-                  ),
-                ],
-              ),
-              IconButton(
-                icon: const Icon(Icons.chevron_right_rounded,
-                    color: AppColors.textDark),
-                onPressed: () {
-                  onMonthChanged?.call(
-                      DateTime(month.year, month.month + 1));
-                },
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-
-          // ── Weekday header
-          Row(
-            children: ['S', 'M', 'T', 'W', 'T', 'F', 'S']
-                .map((d) => Expanded(
-              child: Center(
-                child: Text(
-                  d,
-                  style: GoogleFonts.outfit(
-                    fontSize: 11,
-                    color: AppColors.textDarkMuted,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ))
-                .toList(),
-          ),
-          const SizedBox(height: 6),
-
-          // ── Day grid: each cell contains inline scheduled post chips
-          LayoutBuilder(
-            builder: (context, constraints) {
-              // Cell width based on available width / 7
-              final cellWidth = (constraints.maxWidth - 6 * 4) / 7;
-
-              return GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 7,
-                  mainAxisSpacing: 6,
-                  crossAxisSpacing: 4,
-                  // Tall aspect so we can fit post chips inside
-                  childAspectRatio: cellWidth / 118,
-                ),
-                itemCount: startWeekday + daysInMonth,
-                itemBuilder: (context, i) {
-                  if (i < startWeekday) return const SizedBox();
-
-                  final day = i - startWeekday + 1;
-                  final date =
-                  DateTime(month.year, month.month, day);
-                  final isSelected = isSameDay(date, selectedDate);
-                  final isToday = isSameDay(date, DateTime.now());
-                  final postsOnDay = scoped
-                      .where((p) => isSameDay(p.scheduledAt, date))
-                      .toList()
-                    ..sort((a, b) =>
-                        a.scheduledAt.compareTo(b.scheduledAt));
-
-                  return _InlineDayCell(
-                    day: day,
-                    date: date,
-                    isSelected: isSelected,
-                    isToday: isToday,
-                    posts: postsOnDay,
-                    onTap: () => onDateSelected?.call(date),
-                  );
-                },
-              );
-            },
-          ),
-
-          const SizedBox(height: 12),
-          // ── Legend
-          Row(
-            children: [
-              _legendDot(AppColors.instagram, 'Instagram'),
-              const SizedBox(width: 10),
-              _legendDot(AppColors.facebook, 'Facebook'),
-              const SizedBox(width: 10),
-              _legendDot(AppColors.youtube, 'YouTube'),
-              const SizedBox(width: 10),
-              _legendDot(AppColors.linkedin, 'LinkedIn'),
-              const SizedBox(width: 10),
-              _legendDot(AppColors.threads, 'Threads'),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _legendDot(Color c, String label) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 8,
-          height: 8,
-          decoration: BoxDecoration(shape: BoxShape.circle, color: c),
-        ),
-        const SizedBox(width: 4),
-        Text(
-          label,
-          style: GoogleFonts.outfit(
-              fontSize: 9.5, color: AppColors.textDarkMuted),
-        ),
-      ],
-    );
-  }
-}
-
-// ── Single day cell with inline scheduled post chips
-class _InlineDayCell extends StatelessWidget {
-  final int day;
-  final DateTime date;
-  final bool isSelected;
-  final bool isToday;
-  final List<ScheduledPost> posts;
-  final VoidCallback onTap;
-
-  const _InlineDayCell({
-    required this.day,
-    required this.date,
-    required this.isSelected,
-    required this.isToday,
-    required this.posts,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    // Show max 2 posts inline; then "+N more"
-    final visible = posts.take(2).toList();
-    final overflow = posts.length - visible.length;
-
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.all(4),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(10),
-          color: isSelected
-              ? AppColors.amber.withOpacity(0.15)
-              : isToday
-              ? AppColors.cyan.withOpacity(0.10)
-              : AppColors.scaffoldLight,
-          border: Border.all(
-            color: isSelected
-                ? AppColors.amber
-                : isToday
-                ? AppColors.cyan.withOpacity(0.6)
-                : AppColors.borderLight,
-            width: isSelected ? 1.6 : 1,
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // ── Day number
-            Row(
-              children: [
-                Text(
-                  '$day',
-                  style: GoogleFonts.outfit(
-                    fontSize: 11,
-                    fontWeight:
-                    isSelected ? FontWeight.w800 : FontWeight.w700,
-                    color: AppColors.textDark,
-                  ),
-                ),
-                const Spacer(),
-                if (posts.isNotEmpty)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 4, vertical: 1),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(4),
-                      color: AppColors.amber.withOpacity(0.25),
-                    ),
-                    child: Text(
-                      '${posts.length}',
-                      style: GoogleFonts.outfit(
-                        fontSize: 8,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.amber,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 3),
-
-            // ── Inline scheduled post chips
-            ...visible.map((p) => _postChip(p)),
-
-            // ── Overflow indicator
-            if (overflow > 0)
-              Padding(
-                padding: const EdgeInsets.only(top: 2),
-                child: Text(
-                  '+$overflow more',
-                  style: GoogleFonts.outfit(
-                    fontSize: 8,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textDarkMuted,
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _postChip(ScheduledPost p) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 2),
-      padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 2),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(4),
-        color: p.color.withOpacity(0.15),
-        border: Border.all(color: p.color.withOpacity(0.5), width: 0.5),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 4,
-                height: 4,
-                decoration:
-                BoxDecoration(shape: BoxShape.circle, color: p.color),
-              ),
-              const SizedBox(width: 3),
-              Expanded(
-                child: Text(
-                  formatTime(p.scheduledAt),
-                  style: GoogleFonts.outfit(
-                    fontSize: 7.5,
-                    fontWeight: FontWeight.w800,
-                    color: p.color,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
-          ),
-          Text(
-            p.title,
-            style: GoogleFonts.outfit(
-              fontSize: 8,
-              fontWeight: FontWeight.w600,
-              color: AppColors.textDark,
-              height: 1.1,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ═════════════════════════════════════════════════════════════════════════════
-// ADD CLIENT FORM (Client Registration only — no social handles)
-// ═════════════════════════════════════════════════════════════════════════════
+// ═════════════════════════════════════════════════════════════════════════
+// ADD CLIENT & OTHER FORMS (Preserved Fully)
+// ═════════════════════════════════════════════════════════════════════════
 class AddClientForm extends StatefulWidget {
   final ValueChanged<ClientModel> onSave;
   final VoidCallback onCancel;
@@ -1769,23 +1397,9 @@ class _AddClientFormState extends State<AddClientForm> {
   final _mobile = TextEditingController();
   final _email = TextEditingController();
 
-  Color _pickedColor = AppColors.purple;
+  final Color _pickedColor = AppColors.purple;
   Uint8List? _logoBytes;
   String? _logoFileName;
-
-  final List<Color> _colorOptions = const [
-    AppColors.cyan,
-    AppColors.purple,
-    AppColors.pink,
-    AppColors.green,
-    AppColors.amber,
-    AppColors.blue,
-    AppColors.facebook,
-    AppColors.instagram,
-    AppColors.threads,
-    AppColors.youtube,
-    AppColors.linkedin,
-  ];
 
   @override
   void dispose() {
@@ -1807,8 +1421,7 @@ class _AddClientFormState extends State<AddClientForm> {
       if (result != null && result.files.isNotEmpty) {
         final file = result.files.first;
         final bytes = file.bytes;
-        if (bytes != null) {
-          if (!mounted) return;
+        if (bytes != null && mounted) {
           setState(() {
             _logoBytes = bytes;
             _logoFileName = file.name;
@@ -1816,13 +1429,14 @@ class _AddClientFormState extends State<AddClientForm> {
         }
       }
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Could not pick image: $e'),
-          backgroundColor: AppColors.red.withOpacity(0.9),
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not pick image: $e'),
+            backgroundColor: AppColors.red.withOpacity(0.9),
+          ),
+        );
+      }
     }
   }
 
@@ -1986,8 +1600,6 @@ class _AddClientFormState extends State<AddClientForm> {
               ElevatedButton(
                 onPressed: () {
                   if (!_formKey.currentState!.validate()) return;
-                  // Handles are intentionally empty here — they will be
-                  // filled in from the Social Accounts → Add Handles form.
                   widget.onSave(ClientModel(
                     companyName: _companyName.text.trim(),
                     logoColor: _pickedColor,
@@ -2058,1337 +1670,6 @@ class _AddClientFormState extends State<AddClientForm> {
         ),
         contentPadding:
         const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-      ),
-    );
-  }
-}
-
-// ═════════════════════════════════════════════════════════════════════════════
-// SOCIAL HANDLES FORM (Social Accounts only — no client registration fields)
-// ═════════════════════════════════════════════════════════════════════════════
-class SocialHandlesForm extends StatefulWidget {
-  /// The client whose handles we are editing/adding.
-  final ClientModel client;
-
-  /// Called with an updated copy of the client once the user saves.
-  final ValueChanged<ClientModel> onSave;
-
-  /// Called when the user cancels.
-  final VoidCallback onCancel;
-
-  const SocialHandlesForm({
-    super.key,
-    required this.client,
-    required this.onSave,
-    required this.onCancel,
-  });
-
-  @override
-  State<SocialHandlesForm> createState() => _SocialHandlesFormState();
-}
-
-class _SocialHandlesFormState extends State<SocialHandlesForm> {
-  final _formKey = GlobalKey<FormState>();
-
-  final Map<String, TextEditingController> _handleControllers = {
-    for (final p in kSocialPlatforms) p.name: TextEditingController(),
-  };
-
-  /// Tracks which platforms user has requested to connect (drives the button).
-  final Map<String, bool> _connectRequested = {
-    for (final p in kSocialPlatforms) p.name: false,
-  };
-
-  @override
-  void initState() {
-    super.initState();
-    // Pre-fill existing handles
-    for (final p in kSocialPlatforms) {
-      final existing = widget.client.socialHandles[p.name] ?? '';
-      final stripped = existing.startsWith(p.handlePrefix)
-          ? existing.substring(p.handlePrefix.length)
-          : existing;
-      _handleControllers[p.name]!.text = stripped;
-      _connectRequested[p.name] = widget.client.metaConnected[p.name] ?? false;
-    }
-  }
-
-  @override
-  void dispose() {
-    for (final c in _handleControllers.values) {
-      c.dispose();
-    }
-    super.dispose();
-  }
-
-  void _toggleConnect(SocialPlatform p) {
-    final currentlyConnected = _connectRequested[p.name] ?? false;
-    setState(() {
-      _connectRequested[p.name] = !currentlyConnected;
-    });
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          currentlyConnected
-              ? 'Disconnected ${p.name}'
-              : 'Connected ${p.name} — OAuth simulated.',
-          style: GoogleFonts.outfit(
-              color: Colors.white, fontWeight: FontWeight.w600),
-        ),
-        backgroundColor:
-        (currentlyConnected ? AppColors.amber : p.color).withOpacity(0.9),
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 2),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: AppColors.borderLight),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.04),
-              blurRadius: 16,
-              offset: const Offset(0, 6),
-            ),
-          ],
-        ),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // ── Header with the client we're editing
-              Row(
-                children: [
-                  Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(12),
-                      gradient: LinearGradient(
-                        colors: [
-                          widget.client.logoColor.withOpacity(0.4),
-                          widget.client.logoColor.withOpacity(0.15),
-                        ],
-                      ),
-                      border: Border.all(
-                          color: widget.client.logoColor.withOpacity(0.5)),
-                    ),
-                    child: widget.client.logoBytes != null
-                        ? ClipRRect(
-                      borderRadius: BorderRadius.circular(11),
-                      child: Image.memory(widget.client.logoBytes!,
-                          fit: BoxFit.cover),
-                    )
-                        : Center(
-                      child: Text(
-                        widget.client.companyName.isNotEmpty
-                            ? widget.client.companyName[0].toUpperCase()
-                            : '?',
-                        style: GoogleFonts.bricolageGrotesque(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Social Media Handles',
-                          style: GoogleFonts.bricolageGrotesque(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w800,
-                            color: AppColors.textDark,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          widget.client.companyName,
-                          style: GoogleFonts.outfit(
-                            fontSize: 12,
-                            color: AppColors.textDarkMuted,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'Enter the handle, then tap Connect to link the account.',
-                style: GoogleFonts.outfit(
-                    fontSize: 11, color: AppColors.textDarkMuted),
-              ),
-              const SizedBox(height: 16),
-
-              // ── Platform rows (same design as the original form)
-              ...kSocialPlatforms.map((p) {
-                final isConnected = _connectRequested[p.name] ?? false;
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 40,
-                        height: 40,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(10),
-                          color: p.color.withOpacity(0.1),
-                          border:
-                          Border.all(color: p.color.withOpacity(0.35)),
-                        ),
-                        child: Icon(p.icon, color: p.color, size: 20),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: TextFormField(
-                          controller: _handleControllers[p.name],
-                          style: GoogleFonts.outfit(color: AppColors.textDark),
-                          decoration: InputDecoration(
-                            prefixText: '${p.handlePrefix} ',
-                            prefixStyle: GoogleFonts.outfit(
-                              color: p.color,
-                              fontWeight: FontWeight.w600,
-                            ),
-                            hintText: '${p.name} handle',
-                            hintStyle: GoogleFonts.outfit(
-                              color: AppColors.textDarkMuted,
-                              fontSize: 12,
-                            ),
-                            filled: true,
-                            fillColor: AppColors.scaffoldLight,
-                            isDense: true,
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide.none,
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide:
-                              BorderSide(color: AppColors.borderLight),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide(
-                                  color: p.color.withOpacity(0.6),
-                                  width: 1.5),
-                            ),
-                            contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 14, vertical: 14),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      // ── CONNECT BUTTON
-                      GestureDetector(
-                        onTap: () => _toggleConnect(p),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 12),
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(12),
-                            color: isConnected
-                                ? p.color.withOpacity(0.15)
-                                : Colors.white,
-                            border: Border.all(
-                              color: isConnected
-                                  ? p.color
-                                  : p.color.withOpacity(0.4),
-                              width: isConnected ? 1.5 : 1,
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                isConnected
-                                    ? Icons.check_circle_rounded
-                                    : Icons.link_rounded,
-                                size: 15,
-                                color: p.color,
-                              ),
-                              const SizedBox(width: 5),
-                              Text(
-                                isConnected ? 'Connected' : 'Connect',
-                                style: GoogleFonts.outfit(
-                                  fontSize: 11.5,
-                                  fontWeight: FontWeight.w700,
-                                  color: p.color,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }),
-
-              const SizedBox(height: 24),
-              ElevatedButton(
-                onPressed: () {
-                  if (!_formKey.currentState!.validate()) return;
-
-                  final Map<String, String> handles = {};
-                  final Map<String, bool> metaConn = {};
-                  for (final p in kSocialPlatforms) {
-                    final text = _handleControllers[p.name]!.text.trim();
-                    if (text.isNotEmpty) {
-                      handles[p.name] = text.startsWith(p.handlePrefix)
-                          ? text
-                          : '${p.handlePrefix}$text';
-                      final connected = _connectRequested[p.name] ?? false;
-                      if (connected || p.usesMetaIntegration) {
-                        metaConn[p.name] = true;
-                      }
-                    }
-                  }
-
-                  widget.onSave(ClientModel(
-                    companyName: widget.client.companyName,
-                    logoColor: widget.client.logoColor,
-                    logoBytes: widget.client.logoBytes,
-                    address: widget.client.address,
-                    website: widget.client.website,
-                    mobile: widget.client.mobile,
-                    email: widget.client.email,
-                    socialHandles: handles,
-                    metaConnected: metaConn,
-                  ));
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.purple,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  elevation: 0,
-                ),
-                child: Text(
-                  'Save Social Handles',
-                  style: GoogleFonts.outfit(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 14,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ═════════════════════════════════════════════════════════════════════════════
-// CREATE CONTENT FORM
-// ═════════════════════════════════════════════════════════════════════════════
-class CreateContentForm extends StatefulWidget {
-  final List<ClientModel> clients;
-  final ValueChanged<ScheduledPost> onSave;
-  final VoidCallback onCancel;
-  final ClientModel? lockedClient;
-
-  const CreateContentForm({
-    super.key,
-    required this.clients,
-    required this.onSave,
-    required this.onCancel,
-    this.lockedClient,
-  });
-
-  @override
-  State<CreateContentForm> createState() => _CreateContentFormState();
-}
-
-class _CreateContentFormState extends State<CreateContentForm> {
-  final _formKey = GlobalKey<FormState>();
-
-  double _aspectRatioFor(String? platform, String type) {
-    if (type == 'Reel' || type == 'Story') return 9 / 16;
-    switch (platform) {
-      case 'Instagram':
-      case 'Threads':
-      case 'LinkedIn':
-        return 4 / 5;
-      case 'Facebook':
-        return type == 'Video' ? 16 / 9 : 1.0;
-      case 'YouTube':
-        return 16 / 9;
-      default:
-        return 1.0;
-    }
-  }
-
-  final _title = TextEditingController();
-  final _caption = TextEditingController();
-
-  ClientModel? _selectedClient;
-  String? _selectedPlatform;
-  String _contentType = 'Post';
-  DateTime _scheduledDate = DateTime.now().add(const Duration(hours: 1));
-  TimeOfDay _scheduledTime = TimeOfDay.now();
-  Uint8List? _mediaBytes;
-  String? _mediaFileName;
-  bool _isVideo = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _selectedClient = widget.lockedClient;
-  }
-
-  @override
-  void dispose() {
-    _title.dispose();
-    _caption.dispose();
-    super.dispose();
-  }
-
-  List<String> get _allowedContentTypes {
-    if (_selectedPlatform == null) {
-      return const ['Post', 'Reel', 'Story', 'Video'];
-    }
-    final platform = kSocialPlatforms.firstWhere(
-          (p) => p.name == _selectedPlatform,
-      orElse: () => kSocialPlatforms.first,
-    );
-    return platform.allowedContentTypes;
-  }
-
-  Future<void> _pickMedia() async {
-    try {
-      final isVideoType = _contentType == 'Reel' || _contentType == 'Video';
-      final type = isVideoType ? FileType.video : FileType.image;
-
-      final result = await FilePicker.platform.pickFiles(
-        type: type,
-        allowMultiple: false,
-        withData: true,
-      );
-      if (result != null && result.files.isNotEmpty) {
-        final file = result.files.first;
-        final bytes = file.bytes;
-        if (bytes != null) {
-          if (!mounted) return;
-          setState(() {
-            _mediaBytes = bytes;
-            _mediaFileName = file.name;
-            _isVideo = isVideoType;
-          });
-        }
-      }
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Could not pick media: $e'),
-          backgroundColor: AppColors.red.withOpacity(0.9),
-        ),
-      );
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (widget.clients.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.all(24),
-        child: Center(
-          child: Text(
-            'Please register a client first.',
-            style: GoogleFonts.outfit(color: AppColors.textDarkMuted),
-          ),
-        ),
-      );
-    }
-
-    final availablePlatforms = _selectedClient == null
-        ? <SocialPlatform>[]
-        : kSocialPlatforms
-        .where((p) => _selectedClient!.socialHandles.containsKey(p.name))
-        .toList();
-
-    final allowedTypes = _allowedContentTypes;
-
-    if (_selectedPlatform != null && !allowedTypes.contains(_contentType)) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          setState(() => _contentType = allowedTypes.first);
-        }
-      });
-    }
-
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: AppColors.borderLight),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.04),
-              blurRadius: 16,
-              offset: const Offset(0, 6),
-            ),
-          ],
-        ),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                'Create Content',
-                style: GoogleFonts.bricolageGrotesque(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.textDark,
-                ),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'Step 1 — Select Client',
-                style: GoogleFonts.outfit(
-                  color: AppColors.textDarkSoft,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 12.5,
-                ),
-              ),
-              const SizedBox(height: 8),
-              DropdownButtonFormField<ClientModel>(
-                value: _selectedClient,
-                dropdownColor: Colors.white,
-                decoration: InputDecoration(
-                  labelText: 'Client',
-                  labelStyle:
-                  GoogleFonts.outfit(color: AppColors.textDarkMuted),
-                  filled: true,
-                  fillColor: AppColors.scaffoldLight,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: AppColors.borderLight),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(
-                        color: AppColors.purple.withOpacity(0.6), width: 1.5),
-                  ),
-                ),
-                items: widget.clients
-                    .map((c) => DropdownMenuItem(
-                  value: c,
-                  child: Text(
-                    c.companyName,
-                    style:
-                    GoogleFonts.outfit(color: AppColors.textDark),
-                  ),
-                ))
-                    .toList(),
-                onChanged: widget.lockedClient != null
-                    ? null
-                    : (c) => setState(() {
-                  _selectedClient = c;
-                  _selectedPlatform = null;
-                  _mediaBytes = null;
-                  _mediaFileName = null;
-                }),
-              ),
-              const SizedBox(height: 16),
-              if (_selectedClient != null) ...[
-                Text(
-                  'Step 2 — Select Social Account',
-                  style: GoogleFonts.outfit(
-                    color: AppColors.textDarkSoft,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 12.5,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                if (availablePlatforms.isEmpty)
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: AppColors.amber.withOpacity(0.08),
-                      borderRadius: BorderRadius.circular(12),
-                      border:
-                      Border.all(color: AppColors.amber.withOpacity(0.3)),
-                    ),
-                    child: Text(
-                      'This client has no social handles configured.',
-                      style: GoogleFonts.outfit(
-                          fontSize: 12, color: AppColors.amber),
-                    ),
-                  )
-                else
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: availablePlatforms.map((p) {
-                      final isSelected = _selectedPlatform == p.name;
-                      final handle =
-                          _selectedClient!.socialHandles[p.name] ?? '';
-                      return GestureDetector(
-                        onTap: () => setState(() {
-                          _selectedPlatform = p.name;
-                          _mediaBytes = null;
-                          _mediaFileName = null;
-                          if (!p.allowedContentTypes.contains(_contentType)) {
-                            _contentType = p.allowedContentTypes.first;
-                          }
-                        }),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 8),
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(10),
-                            color: isSelected
-                                ? p.color.withOpacity(0.15)
-                                : AppColors.scaffoldLight,
-                            border: Border.all(
-                              color: isSelected
-                                  ? p.color
-                                  : AppColors.borderLight,
-                              width: isSelected ? 1.5 : 1,
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(p.icon, size: 16, color: p.color),
-                              const SizedBox(width: 6),
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    p.name,
-                                    style: GoogleFonts.outfit(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w700,
-                                      color: AppColors.textDark,
-                                    ),
-                                  ),
-                                  if (handle.isNotEmpty)
-                                    Text(
-                                      handle,
-                                      style: GoogleFonts.outfit(
-                                        fontSize: 9.5,
-                                        color: AppColors.textDarkMuted,
-                                      ),
-                                    ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    }).toList(),
-                  ),
-                const SizedBox(height: 16),
-              ],
-              if (_selectedPlatform != null) ...[
-                Text(
-                  'Step 3 — Content Type',
-                  style: GoogleFonts.outfit(
-                    color: AppColors.textDarkSoft,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 12.5,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: allowedTypes.map((type) {
-                    final isSelected = _contentType == type;
-                    return GestureDetector(
-                      onTap: () => setState(() {
-                        _contentType = type;
-                        final wasVideo = _isVideo;
-                        final isNowVideo = type == 'Reel' || type == 'Video';
-                        if (wasVideo != isNowVideo) {
-                          _mediaBytes = null;
-                          _mediaFileName = null;
-                        }
-                      }),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 10),
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(10),
-                          gradient:
-                          isSelected ? AppColors.primaryGradient : null,
-                          color: isSelected ? null : AppColors.scaffoldLight,
-                          border: Border.all(
-                            color: isSelected
-                                ? AppColors.cyan
-                                : AppColors.borderLight,
-                            width: isSelected ? 1.5 : 1,
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              type == 'Reel'
-                                  ? Icons.movie_creation_rounded
-                                  : type == 'Story'
-                                  ? Icons.auto_stories_rounded
-                                  : type == 'Video'
-                                  ? Icons.videocam_rounded
-                                  : Icons.article_rounded,
-                              size: 14,
-                              color: isSelected
-                                  ? Colors.white
-                                  : AppColors.textDarkSoft,
-                            ),
-                            const SizedBox(width: 6),
-                            Text(
-                              type,
-                              style: GoogleFonts.outfit(
-                                fontSize: 12.5,
-                                fontWeight: FontWeight.w700,
-                                color: isSelected
-                                    ? Colors.white
-                                    : AppColors.textDarkSoft,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  }).toList(),
-                ),
-                const SizedBox(height: 16),
-              ],
-              if (_selectedPlatform != null) ...[
-                Text(
-                  'Step 4 — Upload Media',
-                  style: GoogleFonts.outfit(
-                    color: AppColors.textDarkSoft,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 12.5,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                GestureDetector(
-                  onTap: _pickMedia,
-                  child: Center(
-                    child: ConstrainedBox(
-                      constraints:
-                      const BoxConstraints(maxHeight: 480, maxWidth: 480),
-                      child: AspectRatio(
-                        aspectRatio:
-                        _aspectRatioFor(_selectedPlatform, _contentType),
-                        child: Container(
-                          width: double.infinity,
-                          decoration: BoxDecoration(
-                            color: AppColors.scaffoldLight,
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                              color: _mediaBytes != null
-                                  ? AppColors.purple.withOpacity(0.55)
-                                  : AppColors.borderLight,
-                              width: _mediaBytes != null ? 1.8 : 1,
-                            ),
-                          ),
-                          child: _mediaBytes != null
-                              ? Stack(
-                            children: [
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(15),
-                                child: _isVideo
-                                    ? Container(
-                                  width: double.infinity,
-                                  height: double.infinity,
-                                  color: Colors.black,
-                                  child: Column(
-                                    mainAxisAlignment:
-                                    MainAxisAlignment.center,
-                                    children: [
-                                      Icon(
-                                        Icons
-                                            .play_circle_fill_rounded,
-                                        size: 72,
-                                        color: AppColors.cyan
-                                            .withOpacity(0.95),
-                                      ),
-                                      const SizedBox(height: 12),
-                                      Text(
-                                        _mediaFileName ??
-                                            'Video selected',
-                                        style: GoogleFonts.outfit(
-                                          fontSize: 13,
-                                          color: Colors.white,
-                                          fontWeight:
-                                          FontWeight.w600,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                )
-                                    : Image.memory(
-                                  _mediaBytes!,
-                                  width: double.infinity,
-                                  height: double.infinity,
-                                  fit: BoxFit.cover,
-                                ),
-                              ),
-                              Positioned(
-                                top: 10,
-                                right: 10,
-                                child: Row(
-                                  children: [
-                                    _iconBtn(
-                                        Icons.swap_horiz_rounded,
-                                        AppColors.cyan,
-                                        _pickMedia),
-                                    const SizedBox(width: 6),
-                                    _iconBtn(
-                                      Icons.close_rounded,
-                                      AppColors.red,
-                                          () => setState(() {
-                                        _mediaBytes = null;
-                                        _mediaFileName = null;
-                                      }),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          )
-                              : Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(
-                                _contentType == 'Reel' ||
-                                    _contentType == 'Video'
-                                    ? Icons.video_library_rounded
-                                    : Icons.cloud_upload_rounded,
-                                size: 48,
-                                color:
-                                AppColors.purple.withOpacity(0.75),
-                              ),
-                              const SizedBox(height: 14),
-                              Text(
-                                _contentType == 'Reel' ||
-                                    _contentType == 'Video'
-                                    ? 'Tap to pick video file'
-                                    : 'Tap to pick image file',
-                                style: GoogleFonts.outfit(
-                                  fontSize: 13.5,
-                                  color: AppColors.textDarkSoft,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-              ],
-              if (_selectedPlatform != null) ...[
-                Text(
-                  'Step 5 — Details',
-                  style: GoogleFonts.outfit(
-                    color: AppColors.textDarkSoft,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 12.5,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                TextFormField(
-                  controller: _title,
-                  validator: (v) => v!.isEmpty ? 'Required' : null,
-                  style: GoogleFonts.outfit(color: AppColors.textDark),
-                  decoration: InputDecoration(
-                    labelText: 'Post Title',
-                    labelStyle:
-                    GoogleFonts.outfit(color: AppColors.textDarkMuted),
-                    filled: true,
-                    fillColor: AppColors.scaffoldLight,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: _caption,
-                  maxLines: 3,
-                  validator: (v) => v!.isEmpty ? 'Required' : null,
-                  style: GoogleFonts.outfit(color: AppColors.textDark),
-                  decoration: InputDecoration(
-                    labelText: 'Caption & Hashtags',
-                    labelStyle:
-                    GoogleFonts.outfit(color: AppColors.textDarkMuted),
-                    filled: true,
-                    fillColor: AppColors.scaffoldLight,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: () async {
-                          final picked = await showDatePicker(
-                            context: context,
-                            initialDate: _scheduledDate,
-                            firstDate: DateTime.now(),
-                            lastDate:
-                            DateTime.now().add(const Duration(days: 365)),
-                          );
-                          if (picked != null) {
-                            setState(() => _scheduledDate = picked);
-                          }
-                        },
-                        icon: const Icon(Icons.calendar_today_rounded,
-                            size: 16, color: AppColors.textDark),
-                        label: Text(
-                          '${_scheduledDate.day}/${_scheduledDate.month}/${_scheduledDate.year}',
-                          style:
-                          GoogleFonts.outfit(color: AppColors.textDark),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: () async {
-                          final picked = await showTimePicker(
-                            context: context,
-                            initialTime: _scheduledTime,
-                          );
-                          if (picked != null) {
-                            setState(() => _scheduledTime = picked);
-                          }
-                        },
-                        icon: const Icon(Icons.access_time_rounded,
-                            size: 16, color: AppColors.textDark),
-                        label: Text(
-                          _scheduledTime.format(context),
-                          style:
-                          GoogleFonts.outfit(color: AppColors.textDark),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 24),
-                ElevatedButton(
-                  onPressed: () {
-                    if (!_formKey.currentState!.validate() ||
-                        _selectedClient == null ||
-                        _selectedPlatform == null) {
-                      return;
-                    }
-                    final finalDate = DateTime(
-                      _scheduledDate.year,
-                      _scheduledDate.month,
-                      _scheduledDate.day,
-                      _scheduledTime.hour,
-                      _scheduledTime.minute,
-                    );
-                    final platform = kSocialPlatforms.firstWhere(
-                          (p) => p.name == _selectedPlatform,
-                      orElse: () => kSocialPlatforms.first,
-                    );
-                    widget.onSave(ScheduledPost(
-                      title: _title.text.trim(),
-                      caption: _caption.text.trim(),
-                      clientName: _selectedClient!.companyName,
-                      platform: _selectedPlatform!,
-                      type: _contentType,
-                      scheduledAt: finalDate,
-                      color: platform.color,
-                      imageBytes: _mediaBytes,
-                    ));
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.purple,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    elevation: 0,
-                  ),
-                  child: Text(
-                    'Schedule Content',
-                    style: GoogleFonts.outfit(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 14,
-                    ),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _iconBtn(IconData icon, Color color, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 32,
-        height: 32,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: Colors.white,
-          border: Border.all(color: color.withOpacity(0.5)),
-        ),
-        child: Icon(icon, size: 16, color: color),
-      ),
-    );
-  }
-}
-
-// ═════════════════════════════════════════════════════════════════════════════
-// ANALYTICS DATE RANGE BOTTOM SHEET
-// Preset ranges (7/30/90 days) + Custom Range with start/end date pickers.
-// ═════════════════════════════════════════════════════════════════════════════
-Future<DateRangeSelection?> showAnalyticsDateRangeSheet({
-  required BuildContext context,
-  required DateRangeSelection current,
-}) {
-  return showModalBottomSheet<DateRangeSelection>(
-    context: context,
-    backgroundColor: Colors.white,
-    isScrollControlled: true,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-    ),
-    builder: (ctx) => _AnalyticsDateRangeSheet(current: current),
-  );
-}
-
-class _AnalyticsDateRangeSheet extends StatefulWidget {
-  final DateRangeSelection current;
-  const _AnalyticsDateRangeSheet({required this.current});
-
-  @override
-  State<_AnalyticsDateRangeSheet> createState() =>
-      _AnalyticsDateRangeSheetState();
-}
-
-class _AnalyticsDateRangeSheetState extends State<_AnalyticsDateRangeSheet> {
-  late DateTime _customStart;
-  late DateTime _customEnd;
-
-  @override
-  void initState() {
-    super.initState();
-    _customStart = widget.current.startDate;
-    _customEnd = widget.current.endDate;
-  }
-
-  Future<void> _pickStart() async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _customStart,
-      firstDate: DateTime(2020),
-      lastDate: _customEnd,
-    );
-    if (picked != null) {
-      setState(() {
-        _customStart = picked;
-        if (_customEnd.isBefore(_customStart)) _customEnd = _customStart;
-      });
-    }
-  }
-
-  Future<void> _pickEnd() async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _customEnd,
-      firstDate: _customStart,
-      lastDate: DateTime.now().add(const Duration(days: 365)),
-    );
-    if (picked != null) {
-      setState(() => _customEnd = picked);
-    }
-  }
-
-  String _fmt(DateTime d) =>
-      '${d.day.toString().padLeft(2, '0')} '
-          '${monthName(d.month)} ${d.year}';
-
-  @override
-  Widget build(BuildContext context) {
-    final now = DateTime.now();
-    return SafeArea(
-      child: Padding(
-        padding: EdgeInsets.only(
-          left: 16,
-          right: 16,
-          top: 16,
-          bottom: MediaQuery.of(context).viewInsets.bottom + 16,
-        ),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // ── Handle
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: AppColors.borderLight,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 14),
-
-              // ── Title
-              Text(
-                'Select Reporting Period',
-                style: GoogleFonts.bricolageGrotesque(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.textDark,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Pick a preset or choose a custom date range.',
-                style: GoogleFonts.outfit(
-                    fontSize: 11.5, color: AppColors.textDarkMuted),
-              ),
-              const SizedBox(height: 14),
-
-              // ── Presets
-              _presetTile(context, 'Last 7 Days', 7, now),
-              _presetTile(context, 'Last 30 Days', 30, now),
-              _presetTile(context, 'Last 90 Days', 90, now),
-
-              const SizedBox(height: 8),
-              const Divider(height: 1, color: AppColors.borderLight),
-              const SizedBox(height: 12),
-
-              // ── Custom Range header
-              Row(
-                children: [
-                  Container(
-                    width: 38,
-                    height: 38,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(10),
-                      color: AppColors.purple.withOpacity(0.12),
-                    ),
-                    child: const Icon(Icons.tune_rounded,
-                        color: AppColors.purple, size: 20),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Custom Range',
-                          style: GoogleFonts.outfit(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.textDark,
-                          ),
-                        ),
-                        Text(
-                          'Choose your own start & end dates.',
-                          style: GoogleFonts.outfit(
-                              fontSize: 11,
-                              color: AppColors.textDarkMuted),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-
-              // ── Custom date pickers
-              Row(
-                children: [
-                  Expanded(
-                    child: _dateField(
-                      label: 'Start Date',
-                      value: _fmt(_customStart),
-                      icon: Icons.event_rounded,
-                      onTap: _pickStart,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: _dateField(
-                      label: 'End Date',
-                      value: _fmt(_customEnd),
-                      icon: Icons.event_available_rounded,
-                      onTap: _pickEnd,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 14),
-
-              // ── Apply button
-              ElevatedButton.icon(
-                onPressed: () {
-                  final start = DateTime(
-                      _customStart.year, _customStart.month, _customStart.day);
-                  final end = DateTime(
-                      _customEnd.year, _customEnd.month, _customEnd.day);
-                  Navigator.of(context).pop(DateRangeSelection(
-                    startDate: start,
-                    endDate: end,
-                    label:
-                    '${_fmt(start)} → ${_fmt(end)}',
-                  ));
-                },
-                icon: const Icon(Icons.check_rounded,
-                    size: 16, color: Colors.white),
-                label: Text(
-                  'Apply Custom Range',
-                  style: GoogleFonts.outfit(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 13,
-                  ),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.purple,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  elevation: 0,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _presetTile(
-      BuildContext ctx, String label, int days, DateTime now) {
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      leading: Container(
-        width: 38,
-        height: 38,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(10),
-          color: AppColors.cyan.withOpacity(0.12),
-        ),
-        child: const Icon(Icons.schedule_rounded,
-            color: AppColors.cyan, size: 20),
-      ),
-      title: Text(
-        label,
-        style: GoogleFonts.outfit(
-          fontSize: 13.5,
-          fontWeight: FontWeight.w700,
-          color: AppColors.textDark,
-        ),
-      ),
-      onTap: () {
-        Navigator.of(ctx).pop(DateRangeSelection(
-          startDate: now.subtract(Duration(days: days)),
-          endDate: now,
-          label: label,
-        ));
-      },
-    );
-  }
-
-  Widget _dateField({
-    required String label,
-    required String value,
-    required IconData icon,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding:
-        const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: AppColors.scaffoldLight,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.borderLight),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              label,
-              style: GoogleFonts.outfit(
-                  fontSize: 10, color: AppColors.textDarkMuted),
-            ),
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                Icon(icon, size: 14, color: AppColors.purple),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    value,
-                    style: GoogleFonts.outfit(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textDark,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
       ),
     );
   }

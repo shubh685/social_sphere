@@ -1,13 +1,23 @@
 // dashboard.dart
+import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:http/http.dart' as http;
 import 'package:socialee_sphere/login.dart';
 import 'analytics_dashboard.dart';
 import 'client_dashbaord.dart';
 import 'dashboard_shared.dart';
 
 class Dashboard extends StatefulWidget {
-  const Dashboard({super.key});
+  final String agencyName;
+  final String agencyEmail;
+
+  const Dashboard({
+    super.key,
+    this.agencyName = 'Grow Socialee',
+    this.agencyEmail = 'admin@grow.io',
+  });
 
   @override
   State<Dashboard> createState() => DashboardState();
@@ -16,12 +26,10 @@ class Dashboard extends StatefulWidget {
 class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
   int _selectedIndex = 0;
   bool _sidebarCollapsed = false;
-  String? _allPlatformsClientFilter;
   String _activeSubSection = '';
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
-  ClientModel? _selectedClient;
-  ClientModel? _socialHandlesClient;
+  final Map<String, bool> _expandedClients = {};
 
   final Map<String, bool> _expandedMenus = {
     'clients': false,
@@ -34,12 +42,16 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
   final List<PublishedPost> _publishedPosts = [];
   final List<FailedPost> _failedPosts = [];
 
+  bool _isLoadingClients = false;
+  String? _loadError;
+
   late AnimationController _bgAnimationController;
   late AnimationController _glowAnimationController;
   late Animation<double> _bgAnimation;
   late Animation<double> _glowAnimation;
 
-  // ── SIMPLIFIED SIDEBAR: Dashboard, Clients, Social Accounts
+  static const String _apiBase = 'http://192.168.1.17/socialee_sphere';
+
   late final List<MenuItemModel> _menuItems = [
     const MenuItemModel(
       icon: Icons.dashboard_rounded,
@@ -87,19 +99,282 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
     );
 
     _glowAnimation = Tween<double>(begin: 0.3, end: 0.7).animate(
-      CurvedAnimation(
-          parent: _glowAnimationController, curve: Curves.easeInOut),
+      CurvedAnimation(parent: _glowAnimationController, curve: Curves.easeInOut),
     );
 
-    _seedDemoData();
+    // Defer API + static seeding to avoid layout hit-test errors
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _seedStaticPostsAndMedia();
+        _fetchClientsFromApi();
+      }
+    });
+  }
+
+  // ── FETCH CLIENTS (GET API & FALLBACK) ───────────────────────────────────
+  Future<void> _fetchClientsFromApi() async {
+    if (!mounted) return;
+    setState(() {
+      _isLoadingClients = true;
+      _loadError = null;
+    });
+
+    final encodedAgency = Uri.encodeComponent(widget.agencyName);
+    final url =
+    Uri.parse('$_apiBase/register_company.php?agency_name=$encodedAgency');
+
+    try {
+      final response = await http.get(url);
+      if (!mounted) return;
+
+      if (response.statusCode != 200) {
+        throw Exception('HTTP error ${response.statusCode}');
+      }
+
+      final dynamic jsonResponse = jsonDecode(response.body);
+      if (jsonResponse is! Map || jsonResponse['status'] != true) {
+        throw Exception(
+            (jsonResponse is Map ? jsonResponse['message'] : null) ??
+                'Invalid API response');
+      }
+
+      final List<dynamic> list =
+      (jsonResponse['data'] ?? []) as List<dynamic>;
+      final parsed = <ClientModel>[];
+
+      for (final raw in list) {
+        if (raw is! Map) continue;
+
+        // ── Social handles
+        final handles = <String, String>{};
+        final rawHandles = (raw['social_media_handel'] ?? '').toString();
+        if (rawHandles.isNotEmpty) {
+          try {
+            final decoded = jsonDecode(rawHandles);
+            if (decoded is Map) {
+              decoded.forEach((k, v) => handles[k.toString()] = v.toString());
+            } else {
+              handles['Mention / Details'] = rawHandles;
+            }
+          } catch (_) {
+            handles['Mention / Details'] = rawHandles;
+          }
+        }
+
+        // ── Logo — prefer resolved URL, fall back to base64
+        Uint8List? logoBytes;
+        String? logoUrl;
+
+        final String logoPath =
+        (raw['logo_path'] ?? '').toString().trim();
+        final String logoRaw =
+        (raw['logo_raw'] ?? '').toString().trim();
+
+        final String candidate = logoPath.isNotEmpty ? logoPath : logoRaw;
+
+        if (candidate.isNotEmpty) {
+          if (candidate.startsWith('http://') ||
+              candidate.startsWith('https://')) {
+            logoUrl = candidate;
+          } else if (candidate.startsWith('uploads/')) {
+            final base = _apiBase.endsWith('/')
+                ? _apiBase.substring(0, _apiBase.length - 1)
+                : _apiBase;
+            logoUrl = '$base/$candidate';
+          } else if (candidate.startsWith('data:')) {
+            try {
+              final commaIdx = candidate.indexOf(',');
+              if (commaIdx != -1) {
+                logoBytes = base64Decode(candidate.substring(commaIdx + 1));
+              }
+            } catch (e) {
+              debugPrint('Data URI logo decode failed: $e');
+            }
+          } else {
+            try {
+              logoBytes = base64Decode(candidate);
+            } catch (e) {
+              debugPrint('Raw base64 logo decode failed: $e');
+            }
+          }
+        }
+
+        // ── Logo color
+        Color color = AppColors.purple;
+        final rawColor = (raw['logo_color'] ?? '').toString().trim();
+        if (rawColor.isNotEmpty) {
+          try {
+            final v = rawColor.replaceFirst('#', '');
+            if (v.length == 6) {
+              color = Color(int.parse('FF$v', radix: 16));
+            } else if (v.length == 8) {
+              color = Color(int.parse(v, radix: 16));
+            }
+          } catch (_) {}
+        }
+
+        parsed.add(ClientModel(
+          companyName: (raw['company_name'] ?? '').toString(),
+          logoColor: color,
+          logoBytes: logoBytes,
+          logoUrl: logoUrl, // ← server URL from uploads/
+          address: (raw['address'] ?? '').toString(),
+          website: (raw['website'] ?? '').toString(),
+          mobile: (raw['mobile_number'] ?? '').toString(),
+          email: (raw['email_id'] ?? '').toString(),
+          socialHandles: handles,
+          metaConnected: const {},
+        ));
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _clients
+          ..clear()
+          ..addAll(parsed);
+        _isLoadingClients = false;
+        if (_clients.isEmpty) {
+          _seedDemoData();
+        }
+      });
+    } catch (e) {
+      debugPrint('API fetch failed, falling back to static data: $e');
+      if (!mounted) return;
+      setState(() {
+        _isLoadingClients = false;
+        _loadError = e.toString();
+        _seedDemoData();
+      });
+    }
+  }
+
+  // ── SAVE CLIENT (POST API) ────────────────────────────────────────────────
+  Future<bool> _saveClientToApi(ClientModel client) async {
+    final url = Uri.parse('$_apiBase/register_company.php');
+
+    // ── Build the logo payload.
+    // Priority 1: freshly picked bytes → send as data URI so PHP
+    //            knows the correct MIME (png/jpg/webp/etc).
+    // Priority 2: existing server URL → keep as-is so we don't wipe it.
+    String logoData = '';
+    if (client.logoBytes != null && client.logoBytes!.isNotEmpty) {
+      final b64 = base64Encode(client.logoBytes!);
+      final mime = _guessImageMime(client.logoBytes!);
+      logoData = 'data:$mime;base64,$b64';
+    } else if (client.logoUrl != null && client.logoUrl!.trim().isNotEmpty) {
+      logoData = client.logoUrl!;
+    }
+
+    final handlesJson = jsonEncode(client.socialHandles);
+    final v = client.logoColor.value.toRadixString(16).padLeft(8, '0');
+    final colorHex = '#${v.substring(2)}';
+
+    try {
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'agency_name': widget.agencyName,
+          'company_name': client.companyName,
+          'logo_path': logoData,
+          'logo_color': colorHex,
+          'address': client.address,
+          'website': client.website,
+          'mobile_number': client.mobile,
+          'email_id': client.email,
+          'social_media_handel': handlesJson,
+        }),
+      );
+
+      if (!mounted) return false;
+
+      if (response.statusCode == 200) {
+        final body = jsonDecode(response.body);
+        if (body['status'] == true) {
+          _showSnack(
+              body['message']?.toString() ?? 'Client saved successfully!',
+              AppColors.green);
+          return true;
+        } else {
+          _showSnack('Server: ${body['message'] ?? 'save failed'}',
+              AppColors.amber);
+          return false;
+        }
+      } else {
+        _showSnack('Failed to save (HTTP ${response.statusCode})',
+            AppColors.amber);
+        return false;
+      }
+    } catch (e) {
+      if (mounted) _showSnack('Network error: $e', AppColors.red);
+      return false;
+    }
+  }
+
+  /// Very small magic-number sniffer so we can send the right MIME
+  /// prefix in the data URI. Falls back to image/png.
+  String _guessImageMime(Uint8List bytes) {
+    if (bytes.length >= 8) {
+      // PNG: 89 50 4E 47 0D 0A 1A 0A
+      if (bytes[0] == 0x89 &&
+          bytes[1] == 0x50 &&
+          bytes[2] == 0x4E &&
+          bytes[3] == 0x47) {
+        return 'image/png';
+      }
+      // JPEG: FF D8 FF
+      if (bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF) {
+        return 'image/jpeg';
+      }
+      // GIF: 47 49 46 38
+      if (bytes[0] == 0x47 &&
+          bytes[1] == 0x49 &&
+          bytes[2] == 0x46 &&
+          bytes[3] == 0x38) {
+        return 'image/gif';
+      }
+    }
+    if (bytes.length >= 12) {
+      // WEBP: RIFF....WEBP
+      if (bytes[0] == 0x52 &&
+          bytes[1] == 0x49 &&
+          bytes[2] == 0x46 &&
+          bytes[3] == 0x46 &&
+          bytes[8] == 0x57 &&
+          bytes[9] == 0x45 &&
+          bytes[10] == 0x42 &&
+          bytes[11] == 0x50) {
+        return 'image/webp';
+      }
+    }
+    return 'image/png';
+  }
+
+  void _seedStaticPostsAndMedia() {
+    final now = DateTime.now();
+    if (_scheduledPosts.isEmpty) {
+      _scheduledPosts.addAll([
+        ScheduledPost(
+          title: 'Summer Campaign Reel',
+          caption: 'Beat the heat with our new collection! #summer',
+          clientName: 'TechNova Solutions',
+          platform: 'Instagram',
+          type: 'Reel',
+          scheduledAt: DateTime(now.year, now.month, now.day + 1, 10, 30),
+          color: AppColors.purple,
+        ),
+      ]);
+    }
   }
 
   void _seedDemoData() {
+    if (_clients.isNotEmpty) return;
     _clients.addAll([
       ClientModel(
         companyName: 'TechNova Solutions',
         logoColor: AppColors.purple,
         logoBytes: null,
+        logoUrl: null,
         address: 'Bengaluru, India',
         website: 'technova.io',
         mobile: '+91 98765 43210',
@@ -107,190 +382,23 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
         socialHandles: {
           'Facebook': '@technova',
           'Instagram': '@technova.io',
-          'Threads': '@technova',
-          'YouTube': '@technova',
-          'LinkedIn': 'in/technova',
         },
-        metaConnected: {
-          'Facebook': true,
-          'Instagram': true,
-          'Threads': true,
-        },
+        metaConnected: {'Facebook': true, 'Instagram': true},
       ),
       ClientModel(
-        companyName: 'Bloom Café',
+        companyName: 'Bloom Cafe',
         logoColor: AppColors.pink,
         logoBytes: null,
+        logoUrl: null,
         address: 'Mumbai, India',
         website: 'bloomcafe.in',
         mobile: '+91 91234 56789',
         email: 'hi@bloomcafe.in',
         socialHandles: {
           'Instagram': '@bloomcafe',
-          'Threads': '@bloomcafe',
           'YouTube': '@bloomcafe',
         },
-        metaConnected: {
-          'Instagram': true,
-          'Threads': true,
-        },
-      ),
-      ClientModel(
-        companyName: 'FitPulse Gym',
-        logoColor: AppColors.green,
-        logoBytes: null,
-        address: 'Delhi, India',
-        website: 'fitpulse.fit',
-        mobile: '+91 99887 76655',
-        email: 'team@fitpulse.fit',
-        socialHandles: {
-          'Facebook': '@fitpulse',
-          'Instagram': '@fitpulse.fit',
-          'LinkedIn': 'in/fitpulse',
-        },
-        metaConnected: {
-          'Facebook': true,
-          'Instagram': true,
-        },
-      ),
-    ]);
-
-    final now = DateTime.now();
-    _scheduledPosts.addAll([
-      ScheduledPost(
-        title: 'Summer Campaign Reel',
-        caption: 'Beat the heat with our new collection! #summer',
-        clientName: 'TechNova Solutions',
-        platform: 'Instagram',
-        type: 'Reel',
-        scheduledAt: DateTime(now.year, now.month, now.day + 1, 10, 30),
-        color: AppColors.purple,
-      ),
-      ScheduledPost(
-        title: 'Morning Brew Story',
-        caption: 'Start your day right ☕',
-        clientName: 'Bloom Café',
-        platform: 'Instagram',
-        type: 'Story',
-        scheduledAt: DateTime(now.year, now.month, now.day + 2, 8, 0),
-        color: AppColors.pink,
-      ),
-      ScheduledPost(
-        title: 'Fitness Challenge Post',
-        caption: 'Join our 30-day challenge!',
-        clientName: 'FitPulse Gym',
-        platform: 'Facebook',
-        type: 'Post',
-        scheduledAt: DateTime(now.year, now.month, now.day + 3, 18, 0),
-        color: AppColors.green,
-      ),
-      ScheduledPost(
-        title: 'Product Launch Video',
-        caption: 'Something big is coming...',
-        clientName: 'TechNova Solutions',
-        platform: 'YouTube',
-        type: 'Video',
-        scheduledAt: DateTime(now.year, now.month, now.day + 1, 14, 0),
-        color: AppColors.cyan,
-      ),
-    ]);
-
-    _mediaArchive.addAll([
-      MediaItem(
-        title: 'Product Launch Reel',
-        caption: 'Our biggest launch yet! 🚀',
-        clientName: 'TechNova Solutions',
-        platform: 'Instagram',
-        type: 'Reel',
-        postedAt: DateTime(now.year, now.month, now.day - 1, 11, 30),
-        color: AppColors.purple,
-        imageBytes: null,
-        isArchived: true,
-      ),
-      MediaItem(
-        title: 'Coffee Art Story',
-        caption: 'Latte art perfection ☕',
-        clientName: 'Bloom Café',
-        platform: 'Instagram',
-        type: 'Story',
-        postedAt: DateTime(now.year, now.month, now.day - 2, 9, 15),
-        color: AppColors.pink,
-        imageBytes: null,
-        isArchived: true,
-      ),
-      MediaItem(
-        title: 'Gym Motivation Post',
-        caption: 'No excuses. Just results.',
-        clientName: 'FitPulse Gym',
-        platform: 'Facebook',
-        type: 'Post',
-        postedAt: DateTime(now.year, now.month, now.day - 3, 17, 0),
-        color: AppColors.green,
-        imageBytes: null,
-        isArchived: false,
-      ),
-      MediaItem(
-        title: 'Behind the Scenes',
-        caption: 'A peek inside our studio',
-        clientName: 'TechNova Solutions',
-        platform: 'YouTube',
-        type: 'Video',
-        postedAt: DateTime(now.year, now.month, now.day - 4, 13, 45),
-        color: AppColors.cyan,
-        imageBytes: null,
-        isArchived: true,
-      ),
-    ]);
-
-    _publishedPosts.addAll([
-      PublishedPost(
-        title: 'Welcome Post',
-        clientName: 'TechNova Solutions',
-        platform: 'Facebook',
-        publishedAt: DateTime(now.year, now.month, now.day - 5, 10, 0),
-        likes: 245,
-        comments: 32,
-        shares: 18,
-        color: AppColors.facebook,
-      ),
-      PublishedPost(
-        title: 'New Menu Reveal',
-        clientName: 'Bloom Café',
-        platform: 'Instagram',
-        publishedAt: DateTime(now.year, now.month, now.day - 6, 12, 30),
-        likes: 892,
-        comments: 67,
-        shares: 45,
-        color: AppColors.instagram,
-      ),
-      PublishedPost(
-        title: 'Member Spotlight',
-        clientName: 'FitPulse Gym',
-        platform: 'LinkedIn',
-        publishedAt: DateTime(now.year, now.month, now.day - 7, 16, 0),
-        likes: 534,
-        comments: 41,
-        shares: 22,
-        color: AppColors.linkedin,
-      ),
-    ]);
-
-    _failedPosts.addAll([
-      FailedPost(
-        title: 'Flash Sale Announcement',
-        clientName: 'TechNova Solutions',
-        platform: 'Instagram',
-        failedAt: DateTime(now.year, now.month, now.day - 1, 9, 0),
-        reason: 'API rate limit exceeded',
-        color: AppColors.red,
-      ),
-      FailedPost(
-        title: 'Weekend Special',
-        clientName: 'Bloom Café',
-        platform: 'Facebook',
-        failedAt: DateTime(now.year, now.month, now.day - 2, 11, 30),
-        reason: 'Invalid media format',
-        color: AppColors.orange,
+        metaConnected: {'Instagram': true},
       ),
     ]);
   }
@@ -308,94 +416,92 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
     final isMobile = size.width < 768;
     final isTablet = size.width >= 768 && size.width < 1200;
 
-    return AnimatedBuilder(
-      animation: _bgAnimation,
-      builder: (context, _) {
-        return Scaffold(
-          key: _scaffoldKey,
-          backgroundColor: AppColors.scaffoldLight,
-          drawer: isMobile ? _buildDrawer() : null,
-          body: Row(
-            children: [
-              if (!isMobile)
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 280),
-                  curve: Curves.easeOutCubic,
-                  width: _sidebarCollapsed ? 92 : (isTablet ? 220 : 260),
-                  child: ClipRect(
-                    child: Container(
-                      margin: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            Color.lerp(const Color(0xFF0A0E27),
-                                const Color(0xFF1A0B2E), _bgAnimation.value)!,
-                            Color.lerp(const Color(0xFF1E1B4B),
-                                const Color(0xFF2D1B69), _bgAnimation.value)!,
-                            Color.lerp(const Color(0xFF311042),
-                                const Color(0xFF0F172A), _bgAnimation.value)!,
-                          ],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                            color: AppColors.cyan.withOpacity(0.2), width: 1),
-                        boxShadow: [
-                          BoxShadow(
-                            color: AppColors.purple.withOpacity(0.15),
-                            blurRadius: 30,
-                            offset: const Offset(0, 10),
-                          ),
+    return Scaffold(
+      key: _scaffoldKey,
+      backgroundColor: AppColors.scaffoldLight,
+      drawer: isMobile ? _buildDrawer() : null,
+      body: Row(
+        children: [
+          if (!isMobile)
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 280),
+              curve: Curves.easeOutCubic,
+              width: _sidebarCollapsed ? 92 : (isTablet ? 220 : 260),
+              child: ClipRect(
+                child: AnimatedBuilder(
+                  animation: _bgAnimation,
+                  builder: (context, _) => Container(
+                    margin: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          Color.lerp(const Color(0xFF0A0E27),
+                              const Color(0xFF1A0B2E), _bgAnimation.value)!,
+                          Color.lerp(const Color(0xFF1E1B4B),
+                              const Color(0xFF2D1B69), _bgAnimation.value)!,
+                          Color.lerp(const Color(0xFF311042),
+                              const Color(0xFF0F172A), _bgAnimation.value)!,
                         ],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
                       ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(20),
-                        child:
-                        _buildSidebar(isMobile: false, isTablet: isTablet),
-                      ),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                          color: AppColors.cyan.withOpacity(0.2), width: 1),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.purple.withOpacity(0.15),
+                          blurRadius: 30,
+                          offset: const Offset(0, 10),
+                        ),
+                      ],
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(20),
+                      child: _buildSidebar(isMobile: false, isTablet: isTablet),
                     ),
                   ),
                 ),
-              Expanded(
-                child: Column(
-                  children: [
-                    _buildTopBar(isMobile, isTablet),
-                    Expanded(child: _buildMainContent()),
-                  ],
-                ),
               ),
-            ],
+            ),
+          Expanded(
+            child: Column(
+              children: [
+                _buildTopBar(isMobile, isTablet),
+                Expanded(child: _buildMainContent()),
+              ],
+            ),
           ),
-        );
-      },
+        ],
+      ),
     );
   }
 
+  // ── SIDEBAR ──────────────────────────────────────────────────────────────
   Widget _buildSidebar({required bool isMobile, required bool isTablet}) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final collapsed = constraints.maxWidth < 160;
-
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _buildSidebarBrand(forceExpanded: !collapsed),
             const SizedBox(height: 6),
             Divider(
-              color: Colors.white.withOpacity(0.08),
-              height: 1,
-              indent: 10,
-              endIndent: 10,
-            ),
+                color: Colors.white.withOpacity(0.08),
+                height: 1,
+                indent: 10,
+                endIndent: 10),
             const SizedBox(height: 6),
             Expanded(
               child: ListView.builder(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
                 physics: const ClampingScrollPhysics(),
-                padding: const EdgeInsets.symmetric(horizontal: 6),
                 itemCount: _menuItems.length,
+                addAutomaticKeepAlives: false,
+                addRepaintBoundaries: true,
                 itemBuilder: (context, index) =>
-                    _buildMenuItem(index, forceExpanded: !collapsed),
+                    _buildMenuItem(index, forceExpanded: true),
               ),
             ),
             _buildSidebarFooter(forceExpanded: !collapsed),
@@ -412,11 +518,7 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
       child: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
-            colors: [
-              Color(0xFF0A0E27),
-              Color(0xFF1E1B4B),
-              Color(0xFF311042),
-            ],
+            colors: [Color(0xFF0A0E27), Color(0xFF1E1B4B), Color(0xFF311042)],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
@@ -439,8 +541,7 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
               ),
               Padding(
                 padding: EdgeInsets.only(
-                  bottom: MediaQuery.of(context).viewPadding.bottom,
-                ),
+                    bottom: MediaQuery.of(context).viewPadding.bottom),
                 child: _buildSidebarFooter(forceExpanded: true),
               ),
             ],
@@ -459,26 +560,24 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
         child: Center(
           child: AnimatedBuilder(
             animation: _glowAnimation,
-            builder: (context, _) {
-              return Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
-                  gradient: AppColors.primaryGradient,
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.cyan
-                          .withOpacity(_glowAnimation.value * 0.6),
-                      blurRadius: 16,
-                      spreadRadius: 1,
-                    ),
-                  ],
-                ),
-                child: const Icon(Icons.rocket_launch_rounded,
-                    color: Colors.white, size: 22),
-              );
-            },
+            builder: (context, _) => Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                gradient: AppColors.primaryGradient,
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.cyan
+                        .withOpacity(_glowAnimation.value * 0.6),
+                    blurRadius: 16,
+                    spreadRadius: 1,
+                  ),
+                ],
+              ),
+              child: const Icon(Icons.rocket_launch_rounded,
+                  color: Colors.white, size: 22),
+            ),
           ),
         ),
       );
@@ -490,30 +589,27 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
         height: 40,
         child: ClipRect(
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               AnimatedBuilder(
                 animation: _glowAnimation,
-                builder: (context, _) {
-                  return Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(12),
-                      gradient: AppColors.primaryGradient,
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppColors.cyan
-                              .withOpacity(_glowAnimation.value * 0.6),
-                          blurRadius: 16,
-                          spreadRadius: 1,
-                        ),
-                      ],
-                    ),
-                    child: const Icon(Icons.rocket_launch_rounded,
-                        color: Colors.white, size: 22),
-                  );
-                },
+                builder: (context, _) => Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    gradient: AppColors.primaryGradient,
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.cyan
+                            .withOpacity(_glowAnimation.value * 0.6),
+                        blurRadius: 16,
+                        spreadRadius: 1,
+                      ),
+                    ],
+                  ),
+                  child: const Icon(Icons.rocket_launch_rounded,
+                      color: Colors.white, size: 22),
+                ),
               ),
               const SizedBox(width: 10),
               Flexible(
@@ -542,11 +638,8 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
                     borderRadius: BorderRadius.circular(8),
                     color: Colors.white.withOpacity(0.06),
                   ),
-                  child: const Icon(
-                    Icons.chevron_left_rounded,
-                    color: Colors.white70,
-                    size: 18,
-                  ),
+                  child: const Icon(Icons.chevron_left_rounded,
+                      color: Colors.white70, size: 18),
                 ),
               ),
             ],
@@ -560,9 +653,8 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
     final item = _menuItems[index];
     final isSelected = _selectedIndex == index;
     final showExpanded = forceExpanded;
-    final isExpanded = item.isExpandable &&
-        (_expandedMenus[item.key] ?? false) &&
-        showExpanded;
+    final isExpanded =
+        item.isExpandable && (_expandedMenus[item.key] ?? false) && showExpanded;
 
     if (!showExpanded) {
       return Padding(
@@ -636,12 +728,10 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(12),
                   gradient: isSelected
-                      ? LinearGradient(
-                    colors: [
-                      item.color.withOpacity(0.25),
-                      item.color.withOpacity(0.08),
-                    ],
-                  )
+                      ? LinearGradient(colors: [
+                    item.color.withOpacity(0.25),
+                    item.color.withOpacity(0.08),
+                  ])
                       : null,
                   border: isSelected
                       ? Border.all(
@@ -649,7 +739,6 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
                       : null,
                 ),
                 child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     Container(
                       width: 34,
@@ -734,9 +823,8 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
                           Icon(
                             sub.icon,
                             size: 15,
-                            color: isSubSelected
-                                ? item.color
-                                : Colors.white54,
+                            color:
+                            isSubSelected ? item.color : Colors.white54,
                           ),
                           const SizedBox(width: 8),
                           Expanded(
@@ -784,8 +872,8 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
               AppColors.cyan.withOpacity(0.08),
             ],
           ),
-          border:
-          Border.all(color: AppColors.purple.withOpacity(0.2), width: 1),
+          border: Border.all(
+              color: AppColors.purple.withOpacity(0.2), width: 1),
         ),
         child: showExpanded
             ? Row(
@@ -794,7 +882,9 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
               radius: 14,
               backgroundColor: AppColors.purple.withOpacity(0.3),
               child: Text(
-                'GS',
+                widget.agencyName.isNotEmpty
+                    ? widget.agencyName[0].toUpperCase()
+                    : 'AG',
                 style: GoogleFonts.outfit(
                   fontSize: 10,
                   fontWeight: FontWeight.w700,
@@ -809,7 +899,7 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    'Agency Admin',
+                    widget.agencyName,
                     style: GoogleFonts.outfit(
                       fontSize: 11.5,
                       fontWeight: FontWeight.w700,
@@ -819,7 +909,7 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
                     maxLines: 1,
                   ),
                   Text(
-                    'admin@grow.io',
+                    widget.agencyEmail,
                     style: GoogleFonts.outfit(
                       fontSize: 9.5,
                       color: AppColors.textMuted,
@@ -837,7 +927,9 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
             radius: 14,
             backgroundColor: AppColors.purple.withOpacity(0.3),
             child: Text(
-              'GS',
+              widget.agencyName.isNotEmpty
+                  ? widget.agencyName[0].toUpperCase()
+                  : 'AG',
               style: GoogleFonts.outfit(
                 fontSize: 10,
                 fontWeight: FontWeight.w700,
@@ -850,6 +942,7 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
     );
   }
 
+  // ── TOP BAR ──────────────────────────────────────────────────────────────
   Widget _buildTopBar(bool isMobile, bool isTablet) {
     final baseTitle = _menuItems[_selectedIndex].label;
     final sub = _activeSubSection.isEmpty ? '' : ' • $_activeSubSection';
@@ -911,65 +1004,9 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
                 softWrap: false,
               ),
             ),
-            if (!isMobile && !isTablet)
-              Container(
-                width: 200,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: AppColors.scaffoldLight,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: AppColors.borderLight),
-                ),
-                child: Row(
-                  children: [
-                    const SizedBox(width: 10),
-                    const Icon(Icons.search_rounded,
-                        size: 16, color: AppColors.textDarkMuted),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Search...',
-                      style: GoogleFonts.outfit(
-                          fontSize: 12, color: AppColors.textDarkMuted),
-                    ),
-                  ],
-                ),
-              ),
-            if (!isMobile && !isTablet) const SizedBox(width: 12),
-            Stack(
-              children: [
-                Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: AppColors.scaffoldLight,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: AppColors.borderLight),
-                  ),
-                  child: const Icon(Icons.notifications_rounded,
-                      size: 18, color: AppColors.textDarkSoft),
-                ),
-                Positioned(
-                  top: 6,
-                  right: 6,
-                  child: Container(
-                    width: 8,
-                    height: 8,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: AppColors.pink,
-                      boxShadow: [
-                        BoxShadow(
-                            color: AppColors.pink.withOpacity(0.6),
-                            blurRadius: 6),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
             const SizedBox(width: 8),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(50),
                 gradient: AppColors.primaryGradient,
@@ -997,7 +1034,7 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
                   if (!isMobile && !isTablet) ...[
                     const SizedBox(width: 8),
                     Text(
-                      'Admin',
+                      widget.agencyName,
                       style: GoogleFonts.outfit(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
@@ -1035,7 +1072,6 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
         borderRadius: BorderRadius.circular(50),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOutCubic,
           padding: EdgeInsets.symmetric(
             horizontal: showLabel ? 12 : 8,
             vertical: 6,
@@ -1050,10 +1086,7 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
-            border: Border.all(
-              color: Colors.white.withOpacity(0.25),
-              width: 1,
-            ),
+            border: Border.all(color: Colors.white.withOpacity(0.25), width: 1),
             boxShadow: [
               BoxShadow(
                 color: accent.withOpacity(0.4),
@@ -1065,11 +1098,7 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(
-                Icons.logout_rounded,
-                size: 14,
-                color: Colors.white,
-              ),
+              const Icon(Icons.logout_rounded, size: 14, color: Colors.white),
               if (showLabel) ...[
                 const SizedBox(width: 6),
                 Text(
@@ -1121,22 +1150,17 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
                 height: 58,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  gradient: LinearGradient(
-                    colors: [
-                      AppColors.pink.withOpacity(0.22),
-                      AppColors.purple.withOpacity(0.10),
-                    ],
-                  ),
+                  gradient: LinearGradient(colors: [
+                    AppColors.pink.withOpacity(0.22),
+                    AppColors.purple.withOpacity(0.10),
+                  ]),
                   border: Border.all(
                     color: AppColors.pink.withOpacity(0.45),
                     width: 1.4,
                   ),
                 ),
-                child: const Icon(
-                  Icons.logout_rounded,
-                  color: AppColors.pink,
-                  size: 26,
-                ),
+                child: const Icon(Icons.logout_rounded,
+                    color: AppColors.pink, size: 26),
               ),
               const SizedBox(height: 16),
               Text(
@@ -1149,8 +1173,7 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
               ),
               const SizedBox(height: 6),
               Text(
-                'You will be signed out of your agency workspace. '
-                    'Any unsaved changes will be lost.',
+                'You will be signed out of your agency workspace. Any unsaved changes will be lost.',
                 textAlign: TextAlign.center,
                 style: GoogleFonts.outfit(
                   fontSize: 12.5,
@@ -1187,10 +1210,7 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(12),
                         gradient: LinearGradient(
-                          colors: [
-                            AppColors.pink,
-                            AppColors.purple,
-                          ],
+                          colors: [AppColors.pink, AppColors.purple],
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
                         ),
@@ -1203,10 +1223,10 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
                         ],
                       ),
                       child: ElevatedButton(
-                        onPressed: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                                builder: (ctx) => const LogIN())),
+                        onPressed: () => Navigator.pushReplacement(
+                          context,
+                          MaterialPageRoute(builder: (ctx) => const LogIN()),
+                        ),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.transparent,
                           shadowColor: Colors.transparent,
@@ -1236,17 +1256,11 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
     );
 
     if (shouldLogout == true && mounted) {
-      Navigator.pushNamedAndRemoveUntil(
-        context,
-        '/login',
-            (route) => false,
-      );
+      Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
     }
   }
 
-  // ═══════════════════════════════════════════════════════════════════════
-  // MAIN CONTENT ROUTER — now simplified (only 3 top-level sections)
-  // ═══════════════════════════════════════════════════════════════════════
+  // ── MAIN CONTENT ROUTER ──────────────────────────────────────────────────
   Widget _buildMainContent() {
     switch (_selectedIndex) {
       case 0:
@@ -1255,9 +1269,6 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
         if (_activeSubSection == 'Add Client') return _buildAddClientForm();
         return _buildClientsList();
       case 2:
-        if (_activeSubSection == 'Add Handles') {
-          return _buildAddSocialHandlesForm();
-        }
         if (_activeSubSection == 'All Platforms') {
           return _buildAllPlatformsScreen();
         }
@@ -1278,7 +1289,7 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
     );
   }
 
-  // ── OVERVIEW (Dashboard) ──────────────────────────────────────────────
+  // ── OVERVIEW SECTION ─────────────────────────────────────────────────────
   Widget _buildOverviewSection() {
     return _scrollWrapper(children: [
       _buildWelcomeBanner(),
@@ -1287,72 +1298,31 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
       const SizedBox(height: 20),
       buildSectionTitle('Quick Actions'),
       const SizedBox(height: 12),
-      LayoutBuilder(
-        builder: (context, constraints) {
-          final isNarrow = constraints.maxWidth < 500;
-          if (isNarrow) {
-            return Column(
-              children: [
-                _actionTile('Add Client', Icons.person_add_alt_1_rounded,
-                    AppColors.purple, () {
-                      setState(() {
-                        _selectedIndex = 1;
-                        _activeSubSection = 'Add Client';
-                        _expandedMenus['clients'] = true;
-                      });
-                    }),
-                const SizedBox(height: 12),
-                _actionTile('Open Client Dashboard',
-                    Icons.dashboard_customize_rounded, AppColors.cyan, () {
-                      setState(() {
-                        _selectedIndex = 1;
-                        _activeSubSection = 'Client List';
-                        _expandedMenus['clients'] = true;
-                      });
-                    }),
-              ],
-            );
-          }
-          return Row(
-            children: [
-              Expanded(
-                child: _actionTile('Add Client',
-                    Icons.person_add_alt_1_rounded, AppColors.purple, () {
-                      setState(() {
-                        _selectedIndex = 1;
-                        _activeSubSection = 'Add Client';
-                        _expandedMenus['clients'] = true;
-                      });
-                    }),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _actionTile(
-                    'Open Client Dashboard',
-                    Icons.dashboard_customize_rounded,
-                    AppColors.cyan, () {
+      Row(
+        children: [
+          Expanded(
+            child: _actionTile('Add Client',
+                Icons.person_add_alt_1_rounded, AppColors.purple, () {
+                  setState(() {
+                    _selectedIndex = 1;
+                    _activeSubSection = 'Add Client';
+                    _expandedMenus['clients'] = true;
+                  });
+                }),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: _actionTile('Open Client Dashboard',
+                Icons.dashboard_customize_rounded, AppColors.cyan, () {
                   setState(() {
                     _selectedIndex = 1;
                     _activeSubSection = 'Client List';
                     _expandedMenus['clients'] = true;
                   });
                 }),
-              ),
-            ],
-          );
-        },
+          ),
+        ],
       ),
-      const SizedBox(height: 20),
-      buildSectionTitle('Recent Scheduled Posts'),
-      const SizedBox(height: 12),
-      if (_scheduledPosts.isEmpty)
-        buildEmptyState(
-          icon: Icons.schedule_rounded,
-          title: 'No scheduled posts',
-          subtitle: 'Schedule your first content to see it here.',
-        )
-      else
-        ..._scheduledPosts.take(3).map((post) => buildPostCard(post)),
     ]);
   }
 
@@ -1369,13 +1339,6 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
             color: Colors.white,
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: color.withOpacity(0.35), width: 1),
-            boxShadow: [
-              BoxShadow(
-                color: color.withOpacity(0.08),
-                blurRadius: 16,
-                offset: const Offset(0, 6),
-              ),
-            ],
           ),
           child: Row(
             children: [
@@ -1385,7 +1348,6 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(12),
                   color: color.withOpacity(0.12),
-                  border: Border.all(color: color.withOpacity(0.3)),
                 ),
                 child: Icon(icon, color: color, size: 20),
               ),
@@ -1395,22 +1357,14 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(
-                      label,
-                      style: GoogleFonts.outfit(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textDark,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Tap to open',
-                      style: GoogleFonts.outfit(
-                        fontSize: 11,
-                        color: AppColors.textDarkMuted,
-                      ),
-                    ),
+                    Text(label,
+                        style: GoogleFonts.outfit(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.textDark)),
+                    Text('Tap to open',
+                        style: GoogleFonts.outfit(
+                            fontSize: 11, color: AppColors.textDarkMuted)),
                   ],
                 ),
               ),
@@ -1429,17 +1383,7 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
         borderRadius: BorderRadius.circular(20),
         gradient: const LinearGradient(
           colors: [Color(0xFF0A0E27), Color(0xFF1E1B4B), Color(0xFF311042)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
         ),
-        border: Border.all(color: AppColors.purple.withOpacity(0.35), width: 1),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.purple.withOpacity(0.18),
-            blurRadius: 24,
-            offset: const Offset(0, 8),
-          ),
-        ],
       ),
       child: Row(
         children: [
@@ -1448,134 +1392,80 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  'Welcome back, Admin! 👋',
-                  style: GoogleFonts.bricolageGrotesque(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.white,
-                  ),
-                ),
+                Text('Welcome back, ${widget.agencyName}! 👋',
+                    style: GoogleFonts.bricolageGrotesque(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white)),
                 const SizedBox(height: 6),
                 Text(
-                  'Open a client dashboard to manage their content, calendar, publishing queue, and analytics.',
-                  style: GoogleFonts.outfit(
-                    fontSize: 13,
-                    color: AppColors.textSecondary,
-                  ),
-                ),
+                    'Manage your clients and social media publishing queue.',
+                    style: GoogleFonts.outfit(
+                        fontSize: 13, color: AppColors.textSecondary)),
               ],
             ),
           ),
-          if (MediaQuery.of(context).size.width > 500)
-            Container(
-              width: 60,
-              height: 60,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: AppColors.primaryGradient,
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.cyan.withOpacity(0.4),
-                    blurRadius: 20,
-                  ),
-                ],
-              ),
-              child: const Icon(Icons.auto_awesome_rounded,
-                  color: Colors.white, size: 28),
-            ),
         ],
       ),
     );
   }
 
   Widget _buildStatsRow() {
-    int totalAccounts = 0;
-    for (final c in _clients) {
-      totalAccounts += c.socialHandles.length;
-    }
-
-    final stats = [
-      _Stat('Clients', '${_clients.length}', Icons.people_alt_rounded,
-          AppColors.purple),
-      _Stat('Scheduled', '${_scheduledPosts.length}', Icons.schedule_rounded,
-          AppColors.cyan),
-      _Stat('Accounts', '$totalAccounts', Icons.share_rounded, AppColors.pink),
-    ];
-
     return SizedBox(
       height: 96,
-      child: ListView.separated(
+      child: ListView(
         scrollDirection: Axis.horizontal,
-        itemCount: stats.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 12),
-        itemBuilder: (context, i) {
-          final s = stats[i];
-          return Container(
-            width: 160,
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: s.color.withOpacity(0.3), width: 1),
-              boxShadow: [
-                BoxShadow(
-                  color: s.color.withOpacity(0.1),
-                  blurRadius: 16,
-                  offset: const Offset(0, 6),
-                ),
-              ],
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12),
-                    color: s.color.withOpacity(0.12),
-                    border: Border.all(color: s.color.withOpacity(0.3)),
-                  ),
-                  child: Icon(s.icon, color: s.color, size: 20),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        s.label,
-                        style: GoogleFonts.outfit(
-                            fontSize: 11, color: AppColors.textDarkMuted),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      Text(
-                        s.value,
-                        style: GoogleFonts.bricolageGrotesque(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.textDark,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          );
-        },
+        children: [
+          _buildStatCard('Clients', '${_clients.length}',
+              Icons.people_alt_rounded, AppColors.purple),
+          const SizedBox(width: 12),
+          _buildStatCard('Scheduled', '${_scheduledPosts.length}',
+              Icons.schedule_rounded, AppColors.cyan),
+        ],
       ),
     );
   }
 
-  // ── CLIENTS ──────────────────────────────────────────────────────────
+  Widget _buildStatCard(
+      String label, String value, IconData icon, Color color) {
+    return Container(
+      width: 160,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: color, size: 20),
+          const SizedBox(width: 12),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(label,
+                  style: GoogleFonts.outfit(
+                      fontSize: 11, color: AppColors.textDarkMuted)),
+              Text(value,
+                  style: GoogleFonts.bricolageGrotesque(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.textDark)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── CLIENT LIST SECTION ──────────────────────────────────────────────────
   Widget _buildClientsList() {
     return _scrollWrapper(children: [
       Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Flexible(child: buildSectionTitle('Client List (${_clients.length})')),
+          buildSectionTitle('Client List (${_clients.length})'),
           TextButton.icon(
             onPressed: () => setState(() {
               _activeSubSection = 'Add Client';
@@ -1583,182 +1473,397 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
             }),
             icon: const Icon(Icons.add_rounded,
                 size: 16, color: AppColors.purple),
-            label: Text(
-              'Add Client',
-              style: GoogleFonts.outfit(
-                  color: AppColors.purple, fontWeight: FontWeight.w600),
-            ),
+            label: Text('Add Client',
+                style: GoogleFonts.outfit(
+                    color: AppColors.purple, fontWeight: FontWeight.w600)),
           ),
         ],
       ),
       const SizedBox(height: 4),
       Text(
-        'Tap a client card to open its dedicated dashboard.',
-        style: GoogleFonts.outfit(
-            fontSize: 11.5, color: AppColors.textDarkMuted),
+        'Tap a card to open its dashboard. Use "Show more" for details, or "Add Handles" to link social media.',
+        style:
+        GoogleFonts.outfit(fontSize: 11.5, color: AppColors.textDarkMuted),
       ),
       const SizedBox(height: 12),
-      if (_clients.isEmpty)
+      Row(
+        children: [
+          TextButton.icon(
+            onPressed: _isLoadingClients ? null : _fetchClientsFromApi,
+            icon: Icon(Icons.refresh_rounded,
+                size: 16,
+                color: _isLoadingClients
+                    ? AppColors.textDarkMuted
+                    : AppColors.cyan),
+            label: Text(
+              _isLoadingClients ? 'Refreshing...' : 'Refresh',
+              style: GoogleFonts.outfit(
+                color: _isLoadingClients
+                    ? AppColors.textDarkMuted
+                    : AppColors.cyan,
+                fontWeight: FontWeight.w600,
+                fontSize: 12,
+              ),
+            ),
+          ),
+        ],
+      ),
+      const SizedBox(height: 8),
+      if (_isLoadingClients && _clients.isEmpty)
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 40),
+          child: Center(child: CircularProgressIndicator()),
+        )
+      else if (_clients.isEmpty)
         buildEmptyState(
           icon: Icons.people_outline_rounded,
           title: 'No clients yet',
-          subtitle: 'Register your first client to get started.',
+          subtitle: _loadError == null
+              ? 'Register your first client to get started.'
+              : 'Could not load clients. Tap Refresh to try again.',
         )
       else
         ..._clients.map((client) => _buildClientCard(client)),
+      if (_loadError != null) ...[
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: AppColors.amber.withOpacity(0.08),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: AppColors.amber.withOpacity(0.3)),
+          ),
+          child: Text(
+            '⚠ $_loadError',
+            style: GoogleFonts.outfit(fontSize: 10.5, color: AppColors.amber),
+          ),
+        ),
+      ],
     ]);
   }
 
   Widget _buildClientCard(ClientModel client) {
+    final key = client.companyName;
+    final isExpanded = _expandedClients[key] ?? false;
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          // ── TAP → open separate Client Dashboard page
-          onTap: () => _openClientDashboard(client),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
           borderRadius: BorderRadius.circular(16),
-          child: Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: client.logoColor.withOpacity(0.3),
-                width: 1,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: client.logoColor.withOpacity(0.08),
-                  blurRadius: 16,
-                  offset: const Offset(0, 6),
-                ),
-              ],
+          border: Border.all(color: client.logoColor.withOpacity(0.3)),
+          boxShadow: [
+            BoxShadow(
+              color: client.logoColor.withOpacity(0.06),
+              blurRadius: 14,
+              offset: const Offset(0, 4),
             ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildClientLogo(client, size: 52),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
+          ],
+        ),
+        child: Column(
+          children: [
+            InkWell(
+              onTap: () => _openClientDashboard(client),
+              borderRadius: BorderRadius.vertical(
+                top: const Radius.circular(16),
+                bottom: Radius.circular(isExpanded ? 0 : 16),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    _buildClientLogo(client, size: 52),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Expanded(
-                            child: Text(
-                              client.companyName,
-                              style: GoogleFonts.outfit(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w700,
-                                color: AppColors.textDark,
-                              ),
+                          Text(
+                            client.companyName.isNotEmpty
+                                ? client.companyName
+                                : 'Unnamed Client',
+                            style: GoogleFonts.outfit(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.textDark,
                             ),
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
                           ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(50),
-                              color: client.logoColor.withOpacity(0.12),
-                              border: Border.all(
-                                  color: client.logoColor.withOpacity(0.4)),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  'Open',
-                                  style: GoogleFonts.outfit(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w700,
-                                    color: client.logoColor,
+                          const SizedBox(height: 2),
+                          Text(
+                            client.email.isNotEmpty
+                                ? client.email
+                                : (client.mobile.isNotEmpty
+                                ? client.mobile
+                                : 'No contact provided'),
+                            style: GoogleFonts.outfit(
+                                fontSize: 12,
+                                color: AppColors.textDarkMuted),
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
+                          ),
+                          const SizedBox(height: 6),
+                          Row(
+                            children: [
+                              if (client.address.isNotEmpty) ...[
+                                Icon(Icons.location_on_outlined,
+                                    size: 12, color: AppColors.textDarkMuted),
+                                const SizedBox(width: 4),
+                                Flexible(
+                                  child: Text(
+                                    client.address,
+                                    style: GoogleFonts.outfit(
+                                        fontSize: 11,
+                                        color: AppColors.textDarkMuted),
+                                    overflow: TextOverflow.ellipsis,
+                                    maxLines: 1,
                                   ),
                                 ),
-                                const SizedBox(width: 2),
-                                Icon(Icons.arrow_forward_rounded,
-                                    size: 11, color: client.logoColor),
                               ],
-                            ),
+                            ],
                           ),
                         ],
                       ),
-                      const SizedBox(height: 6),
-                      _buildIconText(Icons.mail_outline_rounded, client.email),
-                      _buildIconText(Icons.phone_outlined, client.mobile),
-                      _buildIconText(
-                          Icons.location_on_outlined, client.address),
-                      if (client.website.isNotEmpty)
-                        _buildIconText(
-                            Icons.language_rounded, client.website),
-                      if (client.socialHandles.isNotEmpty) ...[
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 6,
-                          runSpacing: 4,
-                          children: client.socialHandles.entries.map((e) {
-                            final p = kSocialPlatforms.firstWhere(
-                                  (sp) => sp.name == e.key,
-                              orElse: () => SocialPlatform(
-                                name: e.key,
-                                icon: Icons.share_rounded,
-                                color: AppColors.cyan,
-                                handlePrefix: '@',
-                                allowedContentTypes: const ['Post'],
-                              ),
-                            );
-                            final metaConnected =
-                                client.metaConnected[e.key] ?? false;
-                            return _buildSocialChip(p, e.value,
-                                metaConnected: metaConnected);
-                          }).toList(),
-                        ),
-                      ],
-                    ],
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(50),
+                        color: client.logoColor.withOpacity(0.12),
+                        border: Border.all(
+                            color: client.logoColor.withOpacity(0.4)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'Open',
+                            style: GoogleFonts.outfit(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: client.logoColor,
+                            ),
+                          ),
+                          const SizedBox(width: 2),
+                          Icon(Icons.arrow_forward_rounded,
+                              size: 11, color: client.logoColor),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            // Bottom Chevron Toggle
+            InkWell(
+              onTap: () {
+                setState(() {
+                  _expandedClients[key] = !isExpanded;
+                });
+              },
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                decoration: BoxDecoration(
+                  color: client.logoColor.withOpacity(0.04),
+                  border: Border(
+                    top: BorderSide(
+                      color: AppColors.borderLight,
+                      width: isExpanded ? 0 : 1,
+                    ),
                   ),
                 ),
-              ],
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      isExpanded ? 'Show less' : 'Show more',
+                      style: GoogleFonts.outfit(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                        color: client.logoColor,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    AnimatedRotation(
+                      turns: isExpanded ? 0.5 : 0,
+                      duration: const Duration(milliseconds: 220),
+                      child: Icon(
+                        Icons.keyboard_arrow_down_rounded,
+                        size: 18,
+                        color: client.logoColor,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _openClientDashboard(ClientModel client) {
-    // Scope all posts to this client and open the dedicated page.
-    final clientScheduled = _scheduledPosts
-        .where((p) => p.clientName == client.companyName)
-        .toList();
-    final clientPublished = _publishedPosts
-        .where((p) => p.clientName == client.companyName)
-        .toList();
-    final clientFailed = _failedPosts
-        .where((p) => p.clientName == client.companyName)
-        .toList();
-    final clientMedia = _mediaArchive
-        .where((m) => m.clientName == client.companyName)
-        .toList();
-
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => ClientDashboard(
-          client: client,
-          scheduledPosts: clientScheduled,
-          publishedPosts: clientPublished,
-          failedPosts: clientFailed,
-          mediaArchive: clientMedia,
-          onScheduleNew: (post) {
-            setState(() => _scheduledPosts.add(post));
-          },
+            // Expanded details using safe CrossFade
+            AnimatedCrossFade(
+              firstChild: const SizedBox(width: double.infinity),
+              secondChild: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Divider(height: 1, color: AppColors.borderLight),
+                    const SizedBox(height: 12),
+                    _buildDetailRow(
+                        Icons.phone_rounded,
+                        'Mobile',
+                        client.mobile.isNotEmpty ? client.mobile : 'N/A'),
+                    const SizedBox(height: 8),
+                    _buildDetailRow(
+                        Icons.location_on_rounded,
+                        'Address',
+                        client.address.isNotEmpty ? client.address : 'N/A'),
+                    const SizedBox(height: 8),
+                    _buildDetailRow(
+                        Icons.language_rounded,
+                        'Website',
+                        client.website.isNotEmpty ? client.website : 'N/A'),
+                    const SizedBox(height: 8),
+                    _buildDetailRow(
+                        Icons.mail_outline_rounded,
+                        'Email',
+                        client.email.isNotEmpty ? client.email : 'N/A'),
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Social Handles (${client.socialHandles.length})',
+                            style: GoogleFonts.outfit(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.textDarkSoft,
+                            ),
+                          ),
+                        ),
+                        TextButton.icon(
+                          onPressed: () => _openAddHandlesSheet(client),
+                          icon: const Icon(Icons.add_rounded,
+                              size: 14, color: AppColors.purple),
+                          label: Text(
+                            client.socialHandles.isEmpty
+                                ? 'Add Handles'
+                                : 'Edit Handles',
+                            style: GoogleFonts.outfit(
+                              color: AppColors.purple,
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 4),
+                            minimumSize: const Size(0, 0),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    if (client.socialHandles.isEmpty)
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: AppColors.scaffoldLight,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: AppColors.borderLight),
+                        ),
+                        child: Text(
+                          'No handles added yet. Tap "Add Handles" to link this client\'s social accounts.',
+                          style: GoogleFonts.outfit(
+                            fontSize: 11.5,
+                            color: AppColors.textDarkMuted,
+                            height: 1.4,
+                          ),
+                        ),
+                      )
+                    else
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: client.socialHandles.entries.map((e) {
+                          return Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: client.logoColor.withOpacity(0.08),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                  color: client.logoColor.withOpacity(0.3)),
+                            ),
+                            child: Text(
+                              '${e.key}: ${e.value}',
+                              style: GoogleFonts.outfit(
+                                fontSize: 11.5,
+                                color: client.logoColor,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                  ],
+                ),
+              ),
+              crossFadeState: isExpanded
+                  ? CrossFadeState.showSecond
+                  : CrossFadeState.showFirst,
+              duration: const Duration(milliseconds: 220),
+              sizeCurve: Curves.easeOutCubic,
+            ),
+          ],
         ),
       ),
     );
   }
 
   Widget _buildClientLogo(ClientModel client, {double size = 52}) {
-    if (client.logoBytes != null) {
+    // 1) Prefer network URL (uploads/ file stored on server)
+    if (client.logoUrl != null && client.logoUrl!.trim().isNotEmpty) {
+      return Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: client.logoColor.withOpacity(0.4)),
+          color: Colors.white,
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(13),
+          child: Image.network(
+            client.logoUrl!,
+            fit: BoxFit.cover,
+            gaplessPlayback: true,
+            loadingBuilder: (ctx, child, progress) {
+              if (progress == null) return child;
+              return Center(
+                child: SizedBox(
+                  width: size * 0.35,
+                  height: size * 0.35,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(client.logoColor),
+                  ),
+                ),
+              );
+            },
+            errorBuilder: (_, __, ___) => _initialLogo(client, size),
+          ),
+        ),
+      );
+    }
+
+    // 2) Fallback: raw bytes (during pick, before upload finishes)
+    if (client.logoBytes != null && client.logoBytes!.isNotEmpty) {
       return Container(
         width: size,
         height: size,
@@ -1768,10 +1873,21 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(13),
-          child: Image.memory(client.logoBytes!, fit: BoxFit.cover),
+          child: Image.memory(
+            client.logoBytes!,
+            fit: BoxFit.cover,
+            gaplessPlayback: true,
+            errorBuilder: (_, __, ___) => _initialLogo(client, size),
+          ),
         ),
       );
     }
+
+    // 3) Initial fallback
+    return _initialLogo(client, size);
+  }
+
+  Widget _initialLogo(ClientModel client, double size) {
     return Container(
       width: size,
       height: size,
@@ -1800,112 +1916,169 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildSocialChip(SocialPlatform p, String handle,
-      {bool metaConnected = false}) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(50),
-        color: p.color.withOpacity(0.1),
-        border: Border.all(color: p.color.withOpacity(0.4)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(p.icon, size: 10, color: p.color),
-          const SizedBox(width: 4),
-          Text(
-            handle,
+  Widget _buildDetailRow(IconData icon, String label, String value) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 15, color: AppColors.textDarkMuted),
+        const SizedBox(width: 8),
+        Text(
+          '$label: ',
+          style: GoogleFonts.outfit(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: AppColors.textDarkMuted,
+          ),
+        ),
+        Expanded(
+          child: Text(
+            value,
             style: GoogleFonts.outfit(
-              fontSize: 10,
-              color: p.color,
-              fontWeight: FontWeight.w600,
+              fontSize: 12,
+              color: AppColors.textDark,
+              fontWeight: FontWeight.w500,
             ),
+            overflow: TextOverflow.ellipsis,
+            maxLines: 2,
           ),
-          if (metaConnected) ...[
-            const SizedBox(width: 4),
-            Container(
-              width: 6,
-              height: 6,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: AppColors.green,
-                boxShadow: [
-                  BoxShadow(
-                      color: AppColors.green.withOpacity(0.6), blurRadius: 4),
-                ],
-              ),
-            ),
-          ],
-        ],
+        ),
+      ],
+    );
+  }
+
+  // ── ADD HANDLES SHEET ────────────────────────────────────────────────────
+  Future<void> _openAddHandlesSheet(ClientModel client) async {
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _AddHandlesSheet(
+        client: client,
+        onSave: (updated) async {
+          Navigator.of(ctx).pop();
+          if (!mounted) return;
+          final ok = await _saveClientToApi(updated);
+          if (ok && mounted) {
+            await _fetchClientsFromApi();
+          }
+        },
+      ),
+    );
+
+    if (mounted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() {});
+      });
+    }
+  }
+
+  // ── OPEN CLIENT DASHBOARD ────────────────────────────────────────────────
+  void _openClientDashboard(ClientModel client) {
+    final clientScheduled = _scheduledPosts
+        .where((p) => p.clientName == client.companyName)
+        .toList();
+    final clientPublished = _publishedPosts
+        .where((p) => p.clientName == client.companyName)
+        .toList();
+    final clientFailed = _failedPosts
+        .where((p) => p.clientName == client.companyName)
+        .toList();
+    final clientMedia = _mediaArchive
+        .where((m) => m.clientName == client.companyName)
+        .toList();
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ClientDashboard(
+          client: client,
+          scheduledPosts: clientScheduled,
+          publishedPosts: clientPublished,
+          failedPosts: clientFailed,
+          mediaArchive: clientMedia,
+          onScheduleNew: (post) {
+            if (mounted) setState(() => _scheduledPosts.add(post));
+          },
+        ),
       ),
     );
   }
 
-  Widget _buildIconText(IconData icon, String text) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 3),
-      child: Row(
-        children: [
-          Icon(icon, size: 12, color: AppColors.textDarkMuted),
-          const SizedBox(width: 6),
-          Expanded(
-            child: Text(
-              text,
-              style: GoogleFonts.outfit(
-                  fontSize: 12, color: AppColors.textDarkSoft),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
+  // ── ADD CLIENT FORM ──────────────────────────────────────────────────────
   Widget _buildAddClientForm() {
     return AddClientForm(
-      onSave: (client) {
-        setState(() {
-          _clients.add(client);
-          _selectedIndex = 2;
-          _activeSubSection = 'Add Handles';
-          _socialHandlesClient = client;
-          _expandedMenus['social'] = true;
+      onSave: (client) async {
+        final ok = await _saveClientToApi(client);
+        if (!mounted) return;
+
+        setState(() => _activeSubSection = 'Client List');
+
+        if (ok) {
+          await _fetchClientsFromApi();
+        }
+
+        if (!mounted || !ok) return;
+
+        WidgetsBinding.instance.addPostFrameCallback((_) async {
+          if (!mounted) return;
+
+          final addNow = await showDialog<bool>(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16)),
+              title: Text(
+                'Company Registered!',
+                style: GoogleFonts.bricolageGrotesque(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              content: Text(
+                'Do you want to add social media handles for "${client.companyName}" now?',
+                style: GoogleFonts.outfit(fontSize: 13),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(false),
+                  child: Text('Later',
+                      style: GoogleFonts.outfit(color: AppColors.textDark)),
+                ),
+                ElevatedButton(
+                  onPressed: () => Navigator.of(ctx).pop(true),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.purple,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  child: Text('Add Handles',
+                      style: GoogleFonts.outfit(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700)),
+                ),
+              ],
+            ),
+          );
+
+          if (addNow == true && mounted) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) _openAddHandlesSheet(client);
+            });
+          }
         });
-        _showSnack(
-          'Client "${client.companyName}" registered! Now add their social handles.',
-          AppColors.green,
-        );
       },
       onCancel: () => setState(() => _activeSubSection = 'Client List'),
     );
   }
 
-  // ── SOCIAL ACCOUNTS ──────────────────────────────────────────────────
+  // ── SOCIAL ACCOUNTS OVERVIEW ─────────────────────────────────────────────
   Widget _buildSocialAccountsOverview() {
     return _scrollWrapper(children: [
       buildSectionTitle('Social Accounts'),
-      const SizedBox(height: 4),
-      Text(
-        'Manage connected handles for every client in one place.',
-        style: GoogleFonts.outfit(
-            fontSize: 11.5, color: AppColors.textDarkMuted),
-      ),
       const SizedBox(height: 16),
       _socialOptionCard(
-        title: 'Add Handles',
-        subtitle: 'Pick a client and link their social media accounts.',
-        icon: Icons.add_link_rounded,
-        color: AppColors.purple,
-        onTap: () => setState(() {
-          _activeSubSection = 'Add Handles';
-          _expandedMenus['social'] = true;
-        }),
-      ),
-      const SizedBox(height: 12),
-      _socialOptionCard(
         title: 'All Platforms',
-        subtitle: 'See every connected account across all clients.',
+        subtitle: 'See every connected account.',
         icon: Icons.apps_rounded,
         color: AppColors.blue,
         onTap: () => setState(() {
@@ -1923,225 +2096,47 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
     required Color color,
     required VoidCallback onTap,
   }) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: color.withOpacity(0.35)),
-            boxShadow: [
-              BoxShadow(
-                color: color.withOpacity(0.08),
-                blurRadius: 16,
-                offset: const Offset(0, 6),
-              ),
-            ],
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(14),
-                  gradient: LinearGradient(
-                    colors: [
-                      color.withOpacity(0.25),
-                      color.withOpacity(0.08),
-                    ],
-                  ),
-                  border: Border.all(color: color.withOpacity(0.4)),
-                ),
-                child: Icon(icon, color: color, size: 22),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: color.withOpacity(0.35)),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: color, size: 22),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title,
                       style: GoogleFonts.outfit(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textDark,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      subtitle,
+                          fontSize: 15, fontWeight: FontWeight.w700)),
+                  Text(subtitle,
                       style: GoogleFonts.outfit(
-                          fontSize: 12, color: AppColors.textDarkMuted),
-                    ),
-                  ],
-                ),
+                          fontSize: 12, color: AppColors.textDarkMuted)),
+                ],
               ),
-              Icon(Icons.arrow_forward_rounded, size: 16, color: color),
-            ],
-          ),
+            ),
+            Icon(Icons.arrow_forward_rounded, size: 16, color: color),
+          ],
         ),
       ),
     );
   }
 
-  // ── ADD HANDLES ──────────────────────────────────────────────────────
-  Widget _buildAddSocialHandlesForm() {
-    if (_socialHandlesClient == null && _clients.isEmpty) {
-      return _scrollWrapper(children: [
-        buildSectionTitle('Add Social Handles'),
-        const SizedBox(height: 8),
-        buildEmptyState(
-          icon: Icons.person_add_alt_1_rounded,
-          title: 'No clients registered',
-          subtitle: 'Register a client first from Clients → Add Client.',
-        ),
-      ]);
-    }
-
-    if (_socialHandlesClient == null) {
-      return _scrollWrapper(children: [
-        buildSectionTitle('Select a Client'),
-        const SizedBox(height: 4),
-        Text(
-          'Pick the client whose social handles you want to add or edit.',
-          style: GoogleFonts.outfit(
-              fontSize: 11.5, color: AppColors.textDarkMuted),
-        ),
-        const SizedBox(height: 12),
-        ..._clients.map((c) => _socialHandlesClientPickerTile(c)),
-      ]);
-    }
-
-    return SocialHandlesForm(
-      client: _socialHandlesClient!,
-      onSave: (updated) {
-        setState(() {
-          final idx = _clients
-              .indexWhere((c) => c.companyName == updated.companyName);
-          if (idx != -1) _clients[idx] = updated;
-          _socialHandlesClient = null;
-          _activeSubSection = '';
-        });
-        _showSnack(
-            'Social handles saved for "${updated.companyName}"!',
-            AppColors.green);
-      },
-      onCancel: () => setState(() {
-        _socialHandlesClient = null;
-        _activeSubSection = '';
-      }),
-    );
-  }
-
-  Widget _socialHandlesClientPickerTile(ClientModel c) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: () => setState(() => _socialHandlesClient = c),
-          borderRadius: BorderRadius.circular(14),
-          child: Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: c.logoColor.withOpacity(0.35)),
-              boxShadow: [
-                BoxShadow(
-                  color: c.logoColor.withOpacity(0.06),
-                  blurRadius: 12,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 42,
-                  height: 42,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(11),
-                    gradient: LinearGradient(
-                      colors: [
-                        c.logoColor.withOpacity(0.4),
-                        c.logoColor.withOpacity(0.15),
-                      ],
-                    ),
-                    border: Border.all(color: c.logoColor.withOpacity(0.4)),
-                  ),
-                  child: c.logoBytes != null
-                      ? ClipRRect(
-                    borderRadius: BorderRadius.circular(10),
-                    child:
-                    Image.memory(c.logoBytes!, fit: BoxFit.cover),
-                  )
-                      : Center(
-                    child: Text(
-                      c.companyName.isNotEmpty
-                          ? c.companyName[0].toUpperCase()
-                          : '?',
-                      style: GoogleFonts.bricolageGrotesque(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        c.companyName,
-                        style: GoogleFonts.outfit(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.textDark,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        c.socialHandles.isEmpty
-                            ? 'No handles yet'
-                            : '${c.socialHandles.length} handle(s)',
-                        style: GoogleFonts.outfit(
-                          fontSize: 11,
-                          color: AppColors.textDarkMuted,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Icon(Icons.arrow_forward_rounded,
-                    size: 16, color: c.logoColor),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════
-// ALL PLATFORMS — combined responsive list of every connected account
-// with a client filter (All Clients / specific client)
-// ═══════════════════════════════════════════════════════════════════════
   Widget _buildAllPlatformsScreen() {
-    // Build a flat list: one entry per (client, platform) pair
-    final allEntries = <_ConnectedAccountEntry>[];
+    final entries = <_ConnectedAccountEntry>[];
     for (final c in _clients) {
       for (final p in kSocialPlatforms) {
         final handle = c.socialHandles[p.name];
         if (handle != null && handle.isNotEmpty) {
-          allEntries.add(_ConnectedAccountEntry(
+          entries.add(_ConnectedAccountEntry(
             client: c,
             platform: p,
             handle: handle,
@@ -2151,493 +2146,84 @@ class DashboardState extends State<Dashboard> with TickerProviderStateMixin {
       }
     }
 
-    // Apply client filter
-    final entries = _allPlatformsClientFilter == null
-        ? allEntries
-        : allEntries
-        .where((e) => e.client.companyName == _allPlatformsClientFilter)
-        .toList();
-
-    return _scrollWrapper(children: [
-      buildSectionTitle('All Connected Platforms (${entries.length})'),
-      const SizedBox(height: 4),
-      Text(
-        'Every social account linked across all clients — filter by client to focus.',
-        style: GoogleFonts.outfit(
-            fontSize: 11.5, color: AppColors.textDarkMuted),
-      ),
-      const SizedBox(height: 12),
-
-      // ── Client filter row
-      _clientFilterRow(),
-      const SizedBox(height: 12),
-
-      // ── Compact stats summary strip
-      _allPlatformsSummary(entries),
-      const SizedBox(height: 16),
-
-      if (entries.isEmpty)
+    if (entries.isEmpty) {
+      return _scrollWrapper(children: [
+        buildSectionTitle('All Platforms'),
+        const SizedBox(height: 12),
         buildEmptyState(
           icon: Icons.link_off_rounded,
-          title: _allPlatformsClientFilter == null
-              ? 'No connected platforms yet'
-              : 'No platforms for this client',
-          subtitle: _allPlatformsClientFilter == null
-              ? 'Use Social Accounts → Add Handles to link a client\'s accounts.'
-              : 'Add handles for ${_allPlatformsClientFilter!} from Add Handles.',
-        )
-      else
-      // ── Responsive list (1 col on mobile, 2 col on tablet, 3 col on desktop)
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final w = constraints.maxWidth;
-            final columns = w > 1100
-                ? 3
-                : w > 720
-                ? 2
-                : 1;
-
-            if (columns == 1) {
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: entries
-                    .map((e) => Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: _allPlatformsCard(e),
-                ))
-                    .toList(),
-              );
-            }
-
-            return GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: columns,
-                crossAxisSpacing: 12,
-                mainAxisSpacing: 12,
-                childAspectRatio: columns == 2 ? 2.6 : 2.8,
-              ),
-              itemCount: entries.length,
-              itemBuilder: (context, i) => _allPlatformsCard(entries[i]),
-            );
-          },
+          title: 'No connected accounts yet',
+          subtitle: 'Add handles for a client to see them here.',
         ),
+      ]);
+    }
+
+    return _scrollWrapper(children: [
+      buildSectionTitle('All Platforms (${entries.length})'),
+      const SizedBox(height: 12),
+      ...entries.map((e) => Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border:
+          Border.all(color: e.platform.color.withOpacity(0.3)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(11),
+                color: e.platform.color.withOpacity(0.15),
+                border: Border.all(
+                    color: e.platform.color.withOpacity(0.4)),
+              ),
+              child: Icon(e.platform.icon,
+                  color: e.platform.color, size: 20),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    e.client.companyName,
+                    style: GoogleFonts.outfit(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textDark,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${e.platform.name} • ${e.handle}',
+                    style: GoogleFonts.outfit(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                      color: e.platform.color,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      )),
     ]);
   }
 
-// ── Client filter row (dropdown-style chips)
-  Widget _clientFilterRow() {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.purple.withOpacity(0.3)),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.purple.withOpacity(0.06),
-            blurRadius: 14,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(10),
-              color: AppColors.purple.withOpacity(0.12),
-              border: Border.all(color: AppColors.purple.withOpacity(0.3)),
-            ),
-            child: const Icon(Icons.filter_alt_rounded,
-                size: 18, color: AppColors.purple),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'Filter by Client',
-                  style: GoogleFonts.outfit(
-                      fontSize: 10.5, color: AppColors.textDarkMuted),
-                ),
-                const SizedBox(height: 2),
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  physics: const BouncingScrollPhysics(),
-                  child: Row(
-                    children: [
-                      _clientFilterChip(
-                        label: 'All Clients',
-                        color: AppColors.purple,
-                        isSelected: _allPlatformsClientFilter == null,
-                        onTap: () => setState(
-                                () => _allPlatformsClientFilter = null),
-                      ),
-                      const SizedBox(width: 8),
-                      ..._clients.map((c) {
-                        final isSelected =
-                            _allPlatformsClientFilter == c.companyName;
-                        return Padding(
-                          padding: const EdgeInsets.only(right: 8),
-                          child: _clientFilterChip(
-                            label: c.companyName,
-                            color: c.logoColor,
-                            isSelected: isSelected,
-                            onTap: () => setState(() =>
-                            _allPlatformsClientFilter = c.companyName),
-                          ),
-                        );
-                      }),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          // Clear (X) button, shown only when a filter is applied
-          if (_allPlatformsClientFilter != null)
-            Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: () =>
-                    setState(() => _allPlatformsClientFilter = null),
-                borderRadius: BorderRadius.circular(50),
-                child: Container(
-                  width: 28,
-                  height: 28,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: AppColors.scaffoldLight,
-                    border: Border.all(color: AppColors.borderLight),
-                  ),
-                  child: const Icon(Icons.close_rounded,
-                      size: 14, color: AppColors.textDarkMuted),
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _clientFilterChip({
-    required String label,
-    required Color color,
-    required bool isSelected,
-    required VoidCallback onTap,
-  }) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(50),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(50),
-            color: isSelected
-                ? color.withOpacity(0.14)
-                : AppColors.scaffoldLight,
-            border: Border.all(
-              color: isSelected ? color : AppColors.borderLight,
-              width: isSelected ? 1.4 : 1,
-            ),
-            boxShadow: isSelected
-                ? [
-              BoxShadow(
-                color: color.withOpacity(0.2),
-                blurRadius: 8,
-                offset: const Offset(0, 3),
-              ),
-            ]
-                : null,
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (isSelected) ...[
-                Icon(Icons.check_circle_rounded, size: 12, color: color),
-                const SizedBox(width: 5),
-              ],
-              Text(
-                label,
-                style: GoogleFonts.outfit(
-                  fontSize: 11.5,
-                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
-                  color:
-                  isSelected ? color : AppColors.textDarkSoft,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _allPlatformsSummary(List<_ConnectedAccountEntry> entries) {
-    final Map<String, int> countsPerPlatform = {};
-    for (final e in entries) {
-      countsPerPlatform[e.platform.name] =
-          (countsPerPlatform[e.platform.name] ?? 0) + 1;
-    }
-
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.blue.withOpacity(0.3)),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.blue.withOpacity(0.08),
-            blurRadius: 14,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Platform Summary',
-            style: GoogleFonts.outfit(
-              fontSize: 12.5,
-              fontWeight: FontWeight.w700,
-              color: AppColors.textDarkSoft,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: kSocialPlatforms.map((p) {
-              final count = countsPerPlatform[p.name] ?? 0;
-              return Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(50),
-                  color: p.color.withOpacity(0.10),
-                  border: Border.all(color: p.color.withOpacity(0.35)),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(p.icon, size: 12, color: p.color),
-                    const SizedBox(width: 6),
-                    Text(
-                      '${p.name}: ',
-                      style: GoogleFonts.outfit(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.textDarkSoft,
-                      ),
-                    ),
-                    Text(
-                      '$count',
-                      style: GoogleFonts.bricolageGrotesque(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w800,
-                        color: p.color,
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            }).toList(),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _allPlatformsCard(_ConnectedAccountEntry e) {
-    final p = e.platform;
-    final c = e.client;
-
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () {
-          // Tap → open Add Handles for this client (so you can edit)
-          setState(() {
-            _socialHandlesClient = c;
-            _activeSubSection = 'Add Handles';
-            _expandedMenus['social'] = true;
-          });
-        },
-        borderRadius: BorderRadius.circular(16),
-        child: Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: p.color.withOpacity(0.3)),
-            boxShadow: [
-              BoxShadow(
-                color: p.color.withOpacity(0.06),
-                blurRadius: 14,
-                offset: const Offset(0, 6),
-              ),
-            ],
-          ),
-          child: Row(
-            children: [
-              // Platform icon
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
-                  gradient: LinearGradient(
-                    colors: [
-                      p.color.withOpacity(0.25),
-                      p.color.withOpacity(0.08),
-                    ],
-                  ),
-                  border: Border.all(color: p.color.withOpacity(0.4)),
-                ),
-                child: Icon(p.icon, color: p.color, size: 22),
-              ),
-              const SizedBox(width: 12),
-              // Middle: client name + handle
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            c.companyName,
-                            style: GoogleFonts.outfit(
-                              fontSize: 13.5,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.textDark,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                            maxLines: 1,
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 1),
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(4),
-                            color: p.color.withOpacity(0.12),
-                          ),
-                          child: Text(
-                            p.name,
-                            style: GoogleFonts.outfit(
-                              fontSize: 9,
-                              fontWeight: FontWeight.w800,
-                              color: p.color,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        Icon(p.icon, size: 11, color: p.color),
-                        const SizedBox(width: 5),
-                        Flexible(
-                          child: Text(
-                            e.handle,
-                            style: GoogleFonts.outfit(
-                              fontSize: 11.5,
-                              fontWeight: FontWeight.w600,
-                              color: p.color,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                            maxLines: 1,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              // Status pill
-              Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(50),
-                  color:
-                  (e.metaConnected ? AppColors.green : AppColors.amber)
-                      .withOpacity(0.15),
-                  border: Border.all(
-                    color:
-                    (e.metaConnected ? AppColors.green : AppColors.amber)
-                        .withOpacity(0.4),
-                  ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      e.metaConnected
-                          ? Icons.verified_rounded
-                          : Icons.warning_amber_rounded,
-                      size: 11,
-                      color: e.metaConnected
-                          ? AppColors.green
-                          : AppColors.amber,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      e.metaConnected ? 'Connected' : 'Pending',
-                      style: GoogleFonts.outfit(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                        color: e.metaConnected
-                            ? AppColors.green
-                            : AppColors.amber,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   void _showSnack(String msg, Color color) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(
-          msg,
-          style: GoogleFonts.outfit(
-              color: Colors.white, fontWeight: FontWeight.w600),
-        ),
-        backgroundColor: color.withOpacity(0.9),
-        behavior: SnackBarBehavior.floating,
+        content: Text(msg, style: GoogleFonts.outfit(color: Colors.white)),
+        backgroundColor: color,
       ),
     );
   }
-}
-
-class _Stat {
-  final String label;
-  final String value;
-  final IconData icon;
-  final Color color;
-  _Stat(this.label, this.value, this.icon, this.color);
 }
 
 class _ConnectedAccountEntry {
@@ -2652,4 +2238,237 @@ class _ConnectedAccountEntry {
     required this.handle,
     required this.metaConnected,
   });
+}
+
+class _AddHandlesSheet extends StatefulWidget {
+  final ClientModel client;
+  final ValueChanged<ClientModel> onSave;
+
+  const _AddHandlesSheet({required this.client, required this.onSave});
+
+  @override
+  State<_AddHandlesSheet> createState() => _AddHandlesSheetState();
+}
+
+class _AddHandlesSheetState extends State<_AddHandlesSheet> {
+  late Map<String, TextEditingController> _controllers;
+
+  @override
+  void initState() {
+    super.initState();
+    _controllers = {};
+    for (final p in kSocialPlatforms) {
+      final existing = widget.client.socialHandles[p.name] ?? '';
+      _controllers[p.name] = TextEditingController(text: existing);
+    }
+  }
+
+  @override
+  void dispose() {
+    for (final c in _controllers.values) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  void _save() {
+    final handles = <String, String>{};
+    for (final p in kSocialPlatforms) {
+      final text = _controllers[p.name]!.text.trim();
+      if (text.isNotEmpty) {
+        handles[p.name] =
+        text.startsWith(p.handlePrefix) ? text : '${p.handlePrefix}$text';
+      }
+    }
+
+    widget.onSave(ClientModel(
+      companyName: widget.client.companyName,
+      logoColor: widget.client.logoColor,
+      logoBytes: widget.client.logoBytes,
+      logoUrl: widget.client.logoUrl, // preserved
+      address: widget.client.address,
+      website: widget.client.website,
+      mobile: widget.client.mobile,
+      email: widget.client.email,
+      socialHandles: handles,
+      metaConnected: widget.client.metaConnected,
+    ));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      initialChildSize: 0.85,
+      minChildSize: 0.5,
+      maxChildSize: 0.95,
+      builder: (context, scrollController) {
+        return Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+          ),
+          child: Column(
+            children: [
+              Container(
+                margin: const EdgeInsets.only(top: 10, bottom: 4),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.borderLight,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 10, 20, 10),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(12),
+                        color: AppColors.purple.withOpacity(0.12),
+                      ),
+                      child: const Icon(Icons.add_link_rounded,
+                          color: AppColors.purple, size: 22),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Social Handles',
+                            style: GoogleFonts.bricolageGrotesque(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.textDark,
+                            ),
+                          ),
+                          Text(
+                            widget.client.companyName,
+                            style: GoogleFonts.outfit(
+                              fontSize: 12,
+                              color: AppColors.textDarkMuted,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1, color: AppColors.borderLight),
+              Expanded(
+                child: ListView(
+                  controller: scrollController,
+                  padding: const EdgeInsets.all(20),
+                  children: [
+                    Text(
+                      'Enter the handle for each platform. Leave blank to skip.',
+                      style: GoogleFonts.outfit(
+                        fontSize: 12,
+                        color: AppColors.textDarkMuted,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    ...kSocialPlatforms.map((p) {
+                      final ctrl = _controllers[p.name]!;
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(10),
+                                color: p.color.withOpacity(0.12),
+                                border: Border.all(
+                                    color: p.color.withOpacity(0.35)),
+                              ),
+                              child:
+                              Icon(p.icon, color: p.color, size: 20),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: TextField(
+                                controller: ctrl,
+                                style: GoogleFonts.outfit(
+                                    color: AppColors.textDark),
+                                decoration: InputDecoration(
+                                  labelText: p.name,
+                                  prefixText: '${p.handlePrefix} ',
+                                  prefixStyle: GoogleFonts.outfit(
+                                    color: p.color,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                  labelStyle: GoogleFonts.outfit(
+                                      color: AppColors.textDarkMuted),
+                                  filled: true,
+                                  fillColor: AppColors.scaffoldLight,
+                                  isDense: true,
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide: BorderSide.none,
+                                  ),
+                                  enabledBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide: BorderSide(
+                                        color: AppColors.borderLight),
+                                  ),
+                                  focusedBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide: BorderSide(
+                                        color: p.color.withOpacity(0.6),
+                                        width: 1.5),
+                                  ),
+                                  contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 12),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+                  ],
+                ),
+              ),
+              SafeArea(
+                top: false,
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: _save,
+                      icon: const Icon(Icons.check_rounded,
+                          size: 18, color: Colors.white),
+                      label: Text(
+                        'Save Handles',
+                        style: GoogleFonts.outfit(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14,
+                        ),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.purple,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        elevation: 0,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
 }

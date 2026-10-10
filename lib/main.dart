@@ -12,7 +12,7 @@ import 'package:socialee_sphere/dashboard.dart'; // Ensure your dashboard is imp
 /// ─────────────────────────────────────────────────────────────────────────────
 /// Platform-aware base URL.
 /// ─────────────────────────────────────────────────────────────────────────────
-const String kManualBaseUrl = ""; // e.g. "http://192.168.1.10/socialee_sphere"
+const String kManualBaseUrl = "http://192.168.1.17/socialee_sphere";
 
 String get kBaseUrl {
   if (kManualBaseUrl.isNotEmpty) return kManualBaseUrl;

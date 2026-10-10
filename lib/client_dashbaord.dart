@@ -120,6 +120,15 @@ class _ClientDashboardState extends State<ClientDashboard>
   }
 
   void _simulateApiFetch() {
+    if (!mounted) return;
+    bool changed = false;
+    for (final post in _localScheduled) {
+      if (post.status != PostStatus.live) continue;
+      changed = true;
+      break;
+    }
+    if (!changed) return;
+
     setState(() {
       for (final post in _localScheduled) {
         final id = _postId(post);
@@ -542,97 +551,99 @@ class _ClientDashboardState extends State<ClientDashboard>
           // ── Expandable body
           AnimatedCrossFade(
             firstChild: const SizedBox(width: double.infinity),
-            secondChild: Padding(
-              padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (post.caption.isNotEmpty)
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: AppColors.scaffoldLight,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Text(
-                        post.caption,
-                        style: GoogleFonts.outfit(
-                          fontSize: 11.5,
-                          color: AppColors.textDarkSoft,
-                          height: 1.4,
+            secondChild: RepaintBoundary(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (post.caption.isNotEmpty)
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: AppColors.scaffoldLight,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          post.caption,
+                          style: GoogleFonts.outfit(
+                            fontSize: 11.5,
+                            color: AppColors.textDarkSoft,
+                            height: 1.4,
+                          ),
                         ),
                       ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        const Icon(Icons.schedule_rounded,
+                            size: 13, color: AppColors.textDarkMuted),
+                        const SizedBox(width: 4),
+                        Text(
+                          DateFormat('dd MMM • HH:mm').format(post.scheduledAt),
+                          style: GoogleFonts.outfit(
+                              fontSize: 11, color: AppColors.textDarkMuted),
+                        ),
+                        const Spacer(),
+                        const Icon(Icons.person_outline_rounded,
+                            size: 13, color: AppColors.textDarkMuted),
+                        const SizedBox(width: 4),
+                        Text(
+                          post.ownerName,
+                          style: GoogleFonts.outfit(
+                              fontSize: 11, color: AppColors.textDarkMuted),
+                        ),
+                      ],
                     ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      const Icon(Icons.schedule_rounded,
-                          size: 13, color: AppColors.textDarkMuted),
-                      const SizedBox(width: 4),
-                      Text(
-                        DateFormat('dd MMM • HH:mm').format(post.scheduledAt),
-                        style: GoogleFonts.outfit(
-                            fontSize: 11, color: AppColors.textDarkMuted),
-                      ),
-                      const Spacer(),
-                      const Icon(Icons.person_outline_rounded,
-                          size: 13, color: AppColors.textDarkMuted),
-                      const SizedBox(width: 4),
-                      Text(
-                        post.ownerName,
-                        style: GoogleFonts.outfit(
-                            fontSize: 11, color: AppColors.textDarkMuted),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  const Divider(height: 1, color: AppColors.borderLight),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _LiveCounter(
-                          icon: Icons.favorite_rounded,
-                          label: 'Likes',
-                          value: live.likes,
-                          color: AppColors.pink,
+                    const SizedBox(height: 12),
+                    const Divider(height: 1, color: AppColors.borderLight),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _LiveCounter(
+                            icon: Icons.favorite_rounded,
+                            label: 'Likes',
+                            value: live.likes,
+                            color: AppColors.pink,
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: _LiveCounter(
-                          icon: Icons.chat_bubble_rounded,
-                          label: 'Comments',
-                          value: live.comments,
-                          color: AppColors.cyan,
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _LiveCounter(
+                            icon: Icons.chat_bubble_rounded,
+                            label: 'Comments',
+                            value: live.comments,
+                            color: AppColors.cyan,
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: _LiveCounter(
-                          icon: Icons.share_rounded,
-                          label: 'Shares',
-                          value: live.shares,
-                          color: AppColors.green,
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _LiveCounter(
+                            icon: Icons.share_rounded,
+                            label: 'Shares',
+                            value: live.shares,
+                            color: AppColors.green,
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      const Icon(Icons.sync_rounded,
-                          size: 11, color: AppColors.textDarkMuted),
-                      const SizedBox(width: 4),
-                      Text(
-                        'Updated ${_timeAgo(live.lastUpdated)}',
-                        style: GoogleFonts.outfit(
-                            fontSize: 9.5, color: AppColors.textDarkMuted),
-                      ),
-                    ],
-                  ),
-                ],
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        const Icon(Icons.sync_rounded,
+                            size: 11, color: AppColors.textDarkMuted),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Updated ${_timeAgo(live.lastUpdated)}',
+                          style: GoogleFonts.outfit(
+                              fontSize: 9.5, color: AppColors.textDarkMuted),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
             crossFadeState: isExpanded
@@ -2256,10 +2267,8 @@ class _ClientDashboardState extends State<ClientDashboard>
     setState(() => _isExporting = true);
 
     try {
-      // ── Build the document
       final doc = pw.Document();
 
-      // Load fonts using printing's PdfGoogleFonts (correct API)
       final pw.Font baseFont;
       final pw.Font boldFont;
       final pw.Font headingFont;
@@ -2268,19 +2277,13 @@ class _ClientDashboardState extends State<ClientDashboard>
         boldFont = await PdfGoogleFonts.outfitBold();
         headingFont = await PdfGoogleFonts.bricolageGrotesqueBold();
       } catch (fontErr) {
-        // Fallback to built-in Helvetica if the network font fails
         debugPrint('Font load failed, using fallback: $fontErr');
-        // pdf package's default font is Helvetica via pw.Font.helvetica()
-        // but the pdf package doesn't expose them directly for reuse in
-        // multiple functions here — instead we rebuild with built-in styles.
-        // So we throw a clean error to the user.
         throw Exception(
             'Fonts could not be loaded. Please check your internet connection and try again.');
       }
 
       final theme = pw.ThemeData.withFont(base: baseFont, bold: boldFont);
 
-      // ── Gather data
       final published = widget.publishedPosts
           .where((p) => p.clientName == _client.companyName)
           .toList();
@@ -2336,7 +2339,6 @@ class _ClientDashboardState extends State<ClientDashboard>
             ),
           ),
           build: (context) => [
-            // ── Header band
             pw.Container(
               padding: const pw.EdgeInsets.all(16),
               decoration: pw.BoxDecoration(
@@ -2382,8 +2384,6 @@ class _ClientDashboardState extends State<ClientDashboard>
               ),
             ),
             pw.SizedBox(height: 20),
-
-            // ── Client info
             _pdfSectionTitle('Client Information', headingFont),
             pw.SizedBox(height: 8),
             pw.Container(
@@ -2413,8 +2413,6 @@ class _ClientDashboardState extends State<ClientDashboard>
               ),
             ),
             pw.SizedBox(height: 20),
-
-            // ── KPIs
             _pdfSectionTitle('Key Performance Indicators', headingFont),
             pw.SizedBox(height: 8),
             pw.Row(
@@ -2433,8 +2431,6 @@ class _ClientDashboardState extends State<ClientDashboard>
               ],
             ),
             pw.SizedBox(height: 20),
-
-            // ── Workflow
             _pdfSectionTitle('Content Workflow Snapshot', headingFont),
             pw.SizedBox(height: 8),
             pw.Row(
@@ -2453,8 +2449,6 @@ class _ClientDashboardState extends State<ClientDashboard>
               ],
             ),
             pw.SizedBox(height: 20),
-
-            // ── Published table
             _pdfSectionTitle('Published Posts Performance', headingFont),
             pw.SizedBox(height: 8),
             if (published.isEmpty)
@@ -2498,8 +2492,6 @@ class _ClientDashboardState extends State<ClientDashboard>
                 pw.TableBorder.all(color: PdfColors.grey300, width: 0.5),
               ),
             pw.SizedBox(height: 20),
-
-            // ── Scheduled queue
             _pdfSectionTitle('Scheduled Content Queue', headingFont),
             pw.SizedBox(height: 8),
             if (scheduled.isEmpty)
@@ -2542,8 +2534,6 @@ class _ClientDashboardState extends State<ClientDashboard>
                 pw.TableBorder.all(color: PdfColors.grey300, width: 0.5),
               ),
             pw.SizedBox(height: 20),
-
-            // ── Failed
             if (failed.isNotEmpty) ...[
               _pdfSectionTitle('Failed Posts', headingFont),
               pw.SizedBox(height: 8),
@@ -2580,8 +2570,6 @@ class _ClientDashboardState extends State<ClientDashboard>
               ),
               pw.SizedBox(height: 20),
             ],
-
-            // ── Footer note
             pw.Divider(color: PdfColors.grey400),
             pw.SizedBox(height: 6),
             pw.Text(
@@ -2597,17 +2585,13 @@ class _ClientDashboardState extends State<ClientDashboard>
         ),
       );
 
-      // ── Save bytes
       final bytes = await doc.save();
-
-      // ── Sanitize filename
       final safeName = _client.companyName
           .replaceAll(RegExp(r'[^A-Za-z0-9_\-]'), '_')
           .trim();
       final filename =
           'analytics_${safeName.isEmpty ? 'client' : safeName}_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.pdf';
 
-      // ── Share (this opens the native share dialog)
       await Printing.sharePdf(bytes: bytes, filename: filename);
 
       if (mounted) {
@@ -2820,6 +2804,222 @@ class _ClientDashboardState extends State<ClientDashboard>
     if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
     if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}K';
     return '$n';
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// SOCIAL HANDLES FORM (FIXED / ADDED)
+// ═════════════════════════════════════════════════════════════════════════════
+class SocialHandlesForm extends StatefulWidget {
+  final ClientModel client;
+  final ValueChanged<ClientModel> onSave;
+  final VoidCallback onCancel;
+
+  const SocialHandlesForm({
+    super.key,
+    required this.client,
+    required this.onSave,
+    required this.onCancel,
+  });
+
+  @override
+  State<SocialHandlesForm> createState() => _SocialHandlesFormState();
+}
+
+class _SocialHandlesFormState extends State<SocialHandlesForm> {
+  late final Map<String, TextEditingController> _controllers;
+  late final Map<String, bool> _metaConnected;
+
+  @override
+  void initState() {
+    super.initState();
+    _controllers = {};
+    _metaConnected = {};
+    for (final p in kSocialPlatforms) {
+      _controllers[p.name] = TextEditingController(
+        text: widget.client.socialHandles[p.name] ?? '',
+      );
+      _metaConnected[p.name] = widget.client.metaConnected[p.name] ?? false;
+    }
+  }
+
+  @override
+  void dispose() {
+    for (final c in _controllers.values) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.borderLight),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Manage Social Handles',
+            style: GoogleFonts.bricolageGrotesque(
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+              color: AppColors.textDark,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Enter usernames or profile links and toggle Meta connection.',
+            style: GoogleFonts.outfit(
+              fontSize: 11.5,
+              color: AppColors.textDarkMuted,
+            ),
+          ),
+          const SizedBox(height: 14),
+          ...kSocialPlatforms.map((platform) {
+            final controller = _controllers[platform.name]!;
+            final isConnected = _metaConnected[platform.name] ?? false;
+            return Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.scaffoldLight,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: platform.color.withOpacity(0.3)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(platform.icon, size: 18, color: platform.color),
+                      const SizedBox(width: 8),
+                      Text(
+                        platform.name,
+                        style: GoogleFonts.outfit(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textDark,
+                        ),
+                      ),
+                      const Spacer(),
+                      Switch.adaptive(
+                        value: isConnected,
+                        activeColor: AppColors.green,
+                        onChanged: (val) {
+                          setState(() {
+                            _metaConnected[platform.name] = val;
+                          });
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: controller,
+                    style: GoogleFonts.outfit(color: AppColors.textDark, fontSize: 13),
+                    decoration: InputDecoration(
+                      hintText: '${platform.handlePrefix}username or profile URL',
+                      hintStyle: GoogleFonts.outfit(color: AppColors.textDarkMuted, fontSize: 12),
+                      filled: true,
+                      fillColor: Colors.white,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(color: AppColors.borderLight),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(color: AppColors.borderLight),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(color: platform.color, width: 1.4),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: widget.onCancel,
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    side: BorderSide(color: AppColors.borderLight),
+                  ),
+                  child: Text(
+                    'Cancel',
+                    style: GoogleFonts.outfit(
+                      color: AppColors.textDark,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: () {
+                    final newHandles = <String, String>{};
+                    final newMeta = <String, bool>{};
+                    for (final p in kSocialPlatforms) {
+                      final text = _controllers[p.name]!.text.trim();
+                      if (text.isNotEmpty) {
+                        newHandles[p.name] = text;
+                        newMeta[p.name] = _metaConnected[p.name] ?? false;
+                      }
+                    }
+                    final updatedClient = ClientModel(
+                      companyName: widget.client.companyName,
+                      logoColor: widget.client.logoColor,
+                      logoBytes: widget.client.logoBytes,
+                      address: widget.client.address,
+                      website: widget.client.website,
+                      mobile: widget.client.mobile,
+                      email: widget.client.email,
+                      socialHandles: newHandles,
+                      metaConnected: newMeta,
+                    );
+                    widget.onSave(updatedClient);
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.purple,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    elevation: 0,
+                  ),
+                  child: Text(
+                    'Save Handles',
+                    style: GoogleFonts.outfit(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 }
 
