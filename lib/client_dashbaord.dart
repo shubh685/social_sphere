@@ -544,9 +544,6 @@ class _ClientDashboardState extends State<ClientDashboard> {
   }
 
   // ═════════════════════════════════════════════════════════════════════════
-  // SOCIAL TAB & META API VERIFICATION
-  // ═════════════════════════════════════════════════════════════════════════
-// ═════════════════════════════════════════════════════════════════════════
   // SOCIAL TAB & META API VERIFICATION VIA SDK
   // ═════════════════════════════════════════════════════════════════════════
   Widget _buildSocialTab() {
@@ -569,17 +566,22 @@ class _ClientDashboardState extends State<ClientDashboard> {
           ),
           const SizedBox(height: 4),
           Text(
-            'Connect your Facebook and Instagram accounts instantly using Meta Login, or verify individual profile links below.',
+            'Sign in with Facebook to instantly import every Page and Instagram '
+                'Business Account you manage. You can also verify individual profile links below.',
             style: GoogleFonts.outfit(
                 fontSize: 11.5, color: AppColors.textDarkMuted),
           ),
           const SizedBox(height: 14),
-          // ── One-tap Meta SDK Login Button ──────────
+
+          // ── One-tap Meta SDK Login Button ────────────────────────────────
           ElevatedButton.icon(
-            onPressed: _connectAllMetaAccountsViaSdk,
-            icon: const Icon(Icons.facebook_rounded, size: 18, color: Colors.white),
+            onPressed: _isConnecting ? null : _connectAllMetaAccountsViaSdk,
+            icon: const Icon(Icons.facebook_rounded,
+                size: 18, color: Colors.white),
             label: Text(
-              'Connect Meta Accounts via Facebook Login',
+              _isConnecting && _currentlyConnectingPlatform == 'Facebook'
+                  ? 'Connecting Meta…'
+                  : 'Continue with Facebook',
               style: GoogleFonts.outfit(
                 fontSize: 13,
                 fontWeight: FontWeight.w700,
@@ -588,13 +590,38 @@ class _ClientDashboardState extends State<ClientDashboard> {
             ),
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.facebook,
-              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+              padding:
+              const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
               elevation: 0,
             ),
           ),
+          const SizedBox(height: 8),
+
+          // ── Refresh button (fetch latest pages using existing session) ──
+          OutlinedButton.icon(
+            onPressed: _isConnecting ? null : _refreshMetaAccounts,
+            icon: const Icon(Icons.refresh_rounded,
+                size: 16, color: AppColors.facebook),
+            label: Text(
+              'Refresh from connected Meta session',
+              style: GoogleFonts.outfit(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: AppColors.facebook,
+              ),
+            ),
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              side: BorderSide(color: AppColors.facebook.withOpacity(0.6)),
+            ),
+          ),
+
           if (_connectError != null) ...[
             const SizedBox(height: 12),
             Container(
@@ -625,6 +652,7 @@ class _ClientDashboardState extends State<ClientDashboard> {
               ),
             ),
           ],
+
           const SizedBox(height: 16),
           ...kSocialPlatforms
               .map((platform) => _buildPlatformConnectCard(platform)),
@@ -644,7 +672,8 @@ class _ClientDashboardState extends State<ClientDashboard> {
     );
   }
 
-  /// Automatically authenticates via flutter_facebook_auth and populates all managed pages & IG accounts
+  /// Full OAuth flow: launch Facebook Login → exchange token → fetch
+  /// every managed Page + Instagram Business Account → populate UI.
   Future<void> _connectAllMetaAccountsViaSdk() async {
     setState(() {
       _isConnecting = true;
@@ -653,16 +682,32 @@ class _ClientDashboardState extends State<ClientDashboard> {
     });
 
     try {
+      // 1) Facebook Login (OAuth) — handles permissions & long-lived token.
       await MetaApiService.loginAndAuthorize();
+
+      // 2) Fetch every managed page (with linked IG business accounts).
       final pages = await MetaApiService.fetchFacebookPages();
 
+      if (pages.isEmpty) {
+        throw Exception(
+          'No Facebook Pages found for this account. Make sure you manage at '
+              'least one Page and grant the pages_show_list permission.',
+        );
+      }
+
+      // 3) Populate the connected accounts map.
+      final newlyAdded = <String>[];
       for (final page in pages) {
         final pageId = (page['id'] ?? '').toString();
         final pageName = (page['name'] ?? '').toString();
         final pageToken = (page['access_token'] ?? '').toString();
-        final fanCount = int.tryParse('${page['followers_count'] ?? page['fan_count'] ?? 0}') ?? 0;
+        final fanCount = int.tryParse(
+          '${page['followers_count'] ?? page['fan_count'] ?? 0}',
+        ) ??
+            0;
         final picUrl = (page['picture']?['data']?['url'] ?? '').toString();
-        final link = (page['link'] ?? 'https://facebook.com/$pageId').toString();
+        final link =
+        (page['link'] ?? 'https://facebook.com/$pageId').toString();
 
         if (pageId.isNotEmpty) {
           _connectedAccounts['Facebook'] = ConnectedSocialAccount(
@@ -674,6 +719,7 @@ class _ClientDashboardState extends State<ClientDashboard> {
             profilePicUrl: picUrl.isEmpty ? null : picUrl,
             followers: fanCount,
           );
+          newlyAdded.add('Facebook · $pageName');
         }
 
         final igRaw = page['instagram_business_account'];
@@ -682,7 +728,8 @@ class _ClientDashboardState extends State<ClientDashboard> {
           final igId = (ig['id'] ?? '').toString();
           final igUsername = (ig['username'] ?? '').toString();
           final igName = (ig['name'] ?? igUsername).toString();
-          final igFollowers = int.tryParse('${ig['followers_count'] ?? 0}') ?? 0;
+          final igFollowers =
+              int.tryParse('${ig['followers_count'] ?? 0}') ?? 0;
           final igPic = (ig['profile_picture_url'] ?? '').toString();
 
           if (igId.isNotEmpty && igUsername.isNotEmpty) {
@@ -695,6 +742,7 @@ class _ClientDashboardState extends State<ClientDashboard> {
               profilePicUrl: igPic.isEmpty ? null : igPic,
               followers: igFollowers,
             );
+            newlyAdded.add('Instagram · @$igUsername');
           }
         }
       }
@@ -704,11 +752,14 @@ class _ClientDashboardState extends State<ClientDashboard> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Meta accounts connected successfully!',
-            style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.w600),
+            'Connected ${newlyAdded.length} account(s): '
+                '${newlyAdded.join(", ")}',
+            style: GoogleFonts.outfit(
+                color: Colors.white, fontWeight: FontWeight.w600),
           ),
           backgroundColor: AppColors.green.withOpacity(0.9),
           behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 4),
         ),
       );
     } catch (e) {
@@ -733,6 +784,165 @@ class _ClientDashboardState extends State<ClientDashboard> {
       }
     }
   }
+
+  /// Re-fetch pages using whatever Meta session already exists.
+  Future<void> _refreshMetaAccounts() async {
+    setState(() {
+      _isLoadingAccounts = true;
+      _connectError = null;
+    });
+    try {
+      final hasSession = await MetaApiService.checkExistingLogin();
+      if (!hasSession) {
+        throw Exception(
+            'No existing Facebook session. Please tap "Continue with Facebook" first.');
+      }
+      final pages = await MetaApiService.fetchFacebookPages();
+      if (!mounted) return;
+      setState(() {
+        for (final page in pages) {
+          final pageId = (page['id'] ?? '').toString();
+          final pageName = (page['name'] ?? '').toString();
+          final pageToken = (page['access_token'] ?? '').toString();
+          final fanCount = int.tryParse(
+            '${page['followers_count'] ?? page['fan_count'] ?? 0}',
+          ) ??
+              0;
+          final picUrl = (page['picture']?['data']?['url'] ?? '').toString();
+          final link =
+          (page['link'] ?? 'https://facebook.com/$pageId').toString();
+
+          if (pageId.isNotEmpty) {
+            _connectedAccounts['Facebook'] = ConnectedSocialAccount(
+              platform: 'Facebook',
+              accountId: pageId,
+              accountName: pageName,
+              handle: link,
+              pageAccessToken: pageToken,
+              profilePicUrl: picUrl.isEmpty ? null : picUrl,
+              followers: fanCount,
+            );
+          }
+
+          final igRaw = page['instagram_business_account'];
+          if (igRaw is Map) {
+            final ig = Map<String, dynamic>.from(igRaw);
+            final igId = (ig['id'] ?? '').toString();
+            final igUsername = (ig['username'] ?? '').toString();
+            final igName = (ig['name'] ?? igUsername).toString();
+            final igFollowers =
+                int.tryParse('${ig['followers_count'] ?? 0}') ?? 0;
+            final igPic = (ig['profile_picture_url'] ?? '').toString();
+
+            if (igId.isNotEmpty && igUsername.isNotEmpty) {
+              _connectedAccounts['Instagram'] = ConnectedSocialAccount(
+                platform: 'Instagram',
+                accountId: igId,
+                accountName: igName,
+                handle: 'https://instagram.com/$igUsername',
+                pageAccessToken: pageToken,
+                profilePicUrl: igPic.isEmpty ? null : igPic,
+                followers: igFollowers,
+              );
+            }
+          }
+        }
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Refreshed ${_connectedAccounts.length} account(s).',
+            style: GoogleFonts.outfit(color: Colors.white),
+          ),
+          backgroundColor: AppColors.green.withOpacity(0.9),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _connectError = 'Refresh failed: $e');
+    } finally {
+      if (mounted) setState(() => _isLoadingAccounts = false);
+    }
+  }
+
+  /// Manually verify a single handle using MetaApiService (calls Graph API
+  /// with the current user access token — no hard-coded developer token).
+  Future<void> _saveManualConnection(
+      SocialPlatform platform, String handle) async {
+    setState(() {
+      _isConnecting = true;
+      _currentlyConnectingPlatform = platform.name;
+      _connectError = null;
+    });
+
+    try {
+      // Verify via live Graph API using the OAuth-issued user token.
+      final MetaVerifiedAccount? verified = await MetaApiService.resolve(
+        platform: platform.name,
+        handle: handle,
+      );
+
+      if (verified == null) {
+        throw Exception(
+          'Could not access this ${platform.name} account with your Meta '
+              'session. Confirm the URL is correct and that you manage this '
+              'account on Facebook.',
+        );
+      }
+
+      final ConnectedSocialAccount enriched = ConnectedSocialAccount(
+        platform: platform.name,
+        accountId: verified.id,
+        accountName:
+        verified.name.isEmpty ? _client.companyName : verified.name,
+        handle: verified.profileLink.isEmpty ? handle : verified.profileLink,
+        pageAccessToken: verified.pageAccessToken,
+        profilePicUrl:
+        verified.pictureUrl.isEmpty ? null : verified.pictureUrl,
+        followers: verified.followers,
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _connectedAccounts[platform.name] = enriched;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${platform.name} verified and connected successfully!',
+            style: GoogleFonts.outfit(
+                color: Colors.white, fontWeight: FontWeight.w600),
+          ),
+          backgroundColor: AppColors.green.withOpacity(0.9),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        setState(() => _connectError = 'Connection failed: $e');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Connection failed: $e',
+              style: GoogleFonts.outfit(color: Colors.white),
+            ),
+            backgroundColor: AppColors.red.withOpacity(0.9),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isConnecting = false;
+          _currentlyConnectingPlatform = null;
+        });
+      }
+    }
+  }
+
 
   Widget _buildPlatformConnectCard(SocialPlatform platform) {
     final connected = _connectedAccounts[platform.name];
@@ -1038,77 +1248,6 @@ class _ClientDashboardState extends State<ClientDashboard> {
         ],
       ),
     );
-  }
-
-  Future<void> _saveManualConnection(
-      SocialPlatform platform, String handle) async {
-    setState(() {
-      _isConnecting = true;
-      _currentlyConnectingPlatform = platform.name;
-      _connectError = null;
-    });
-
-    try {
-      // ── Verify directly via MetaApiService in Flutter frontend ──────────
-      final MetaVerifiedAccount? verified = await MetaApiService.resolve(
-        platform: platform.name,
-        handle: handle,
-      );
-
-      if (verified == null) {
-        throw Exception(
-            'Could not access this ${platform.name} account with the current Meta token. Check the URL and permissions, and confirm the client has authorized this account or that its Page is accessible to the token.');
-      }
-
-      final ConnectedSocialAccount enriched = ConnectedSocialAccount(
-        platform: platform.name,
-        accountId: verified.id,
-        accountName: verified.name.isEmpty ? _client.companyName : verified.name,
-        handle: verified.profileLink.isEmpty ? handle : verified.profileLink,
-        pageAccessToken: verified.pageAccessToken,
-        profilePicUrl:
-        verified.pictureUrl.isEmpty ? null : verified.pictureUrl,
-        followers: verified.followers,
-      );
-
-      if (!mounted) return;
-      setState(() {
-        _connectedAccounts[platform.name] = enriched;
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            '${platform.name} verified and connected successfully!',
-            style: GoogleFonts.outfit(
-                color: Colors.white, fontWeight: FontWeight.w600),
-          ),
-          backgroundColor: AppColors.green.withOpacity(0.9),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    } catch (e) {
-      if (mounted) {
-        setState(() => _connectError = 'Connection failed: $e');
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Connection failed: $e',
-              style: GoogleFonts.outfit(color: Colors.white),
-            ),
-            backgroundColor: AppColors.red.withOpacity(0.9),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isConnecting = false;
-          _currentlyConnectingPlatform = null;
-        });
-      }
-    }
   }
 
   Future<void> _disconnectPlatform(SocialPlatform platform) async {
